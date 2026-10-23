@@ -108,7 +108,7 @@ int main() {
     f.edge(0, false);
     assert(!f.buttons.waitingForRelease());
     f.edge(0, true);
-    assert(f.buttons.page() == 2);
+    assert(f.buttons.page() == ButtonController::pageCount - 1);
     f.edge(0, false);
     f.edge(1, true);
     assert(f.buttons.page() == 0);
@@ -122,6 +122,13 @@ int main() {
     assert(f.buttons.shortPresses(0) == 1);
     assert(f.buttons.shortPresses(1) == 0);
     assert(f.buttons.shortPresses(2) == 0);
+    // Visit every diagnostic page and wrap, without creating run events.
+    for (uint8_t i = 0; i < ButtonController::pageCount; ++i) {
+      const uint8_t previous = f.buttons.page();
+      assert(f.edge(1, true).shortPressMask == 0);
+      assert(f.buttons.page() == (previous + 1) % ButtonController::pageCount);
+      f.edge(1, false);
+    }
     f.edge(3, true);
     assert(f.edge(3, false).shortPressMask == 0);
     f.edge(3, true);

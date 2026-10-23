@@ -59,7 +59,7 @@ void Display::drawIndicators(const ButtonController& buttons, uint8_t y) {
   }
 }
 
-void Display::draw(const ButtonController& buttons, uint32_t now) {
+void Display::draw(const ButtonController& buttons, const Network& network, uint32_t now) {
   oled_.clearBuffer();
   oled_.setFont(u8g2_font_6x12_tr);
   oled_.drawStr(4, 10, "CueLink");
@@ -67,25 +67,35 @@ void Display::draw(const ButtonController& buttons, uint32_t now) {
   if (buttons.mode() == Mode::Run) {
     oled_.drawStr(106, 10, "RUN");
   } else {
-    snprintf(text, sizeof(text), "DIAG %u/3", buttons.page() + 1);
+    snprintf(text, sizeof(text), "DIAG %u/%u", buttons.page() + 1,
+             ButtonController::pageCount);
     oled_.drawStr(76, 10, text);
   }
   oled_.drawHLine(4, 13, 120);
 
   const uint32_t hold = buttons.holdElapsed(now);
   if (buttons.mode() == Mode::Run) {
-    drawIndicators(buttons, 19);
-    if (buttons.waitingForRelease()) {
-      oled_.drawStr(4, 50, "Release all buttons");
-    } else {
-      oled_.drawFrame(4, 42, 120, 5);
-      if (hold) oled_.drawBox(5, 43, (hold * 118U) / ButtonController::holdMs, 3);
-      oled_.setFont(u8g2_font_5x7_tr);
-      oled_.drawStr(4, 55, "Hold B4 5s: diagnostics");
-    }
+    drawIndicators(buttons, 16);
     oled_.setFont(u8g2_font_5x7_tr);
-    if (buttons.lastEvent() < 0) snprintf(text, sizeof(text), "Last: --");
-    else snprintf(text, sizeof(text), "Last: B%d short press", buttons.lastEvent() + 1);
+    if (network.state() == Network::State::NotConfigured) {
+      snprintf(text, sizeof(text), "Wi-Fi not configured");
+    } else snprintf(text, sizeof(text), "Wi-Fi %s", network.stateText());
+    oled_.drawStr(4, 44, text);
+    snprintf(text, sizeof(text), "IP %s",
+             network.connected() ? network.ip().toString().c_str() : "--");
+    oled_.drawStr(4, 53, text);
+    // Network status and IP have dedicated lines even during event feedback.
+    // Only a currently active B4 hold gets a progress strip.
+    if (hold) oled_.drawBox(4, 55, (hold * 120U) / ButtonController::holdMs, 1);
+    if (buttons.waitingForRelease()) {
+      snprintf(text, sizeof(text), "Release all buttons");
+    } else if (hold) {
+      snprintf(text, sizeof(text), "Hold B4: diagnostics");
+    } else if (feedback_ && buttons.lastEvent() >= 0) {
+      snprintf(text, sizeof(text), "B%d short press", buttons.lastEvent() + 1);
+    } else {
+      snprintf(text, sizeof(text), "Hold B4 5s: diagnostics");
+    }
     oled_.drawStr(4, 62, text);
     return;
   }
@@ -104,7 +114,7 @@ void Display::draw(const ButtonController& buttons, uint32_t now) {
     oled_.setFont(u8g2_font_5x7_tr);
     oled_.drawStr(89, 24, "SHORT");
     oled_.drawStr(89, 34, "RUN");
-  } else {
+  } else if (buttons.page() == 2) {
     const uint64_t seconds = uptimeMs_ / 1000;
     snprintf(text, sizeof(text), "Up %luh %02lum %02lus",
              static_cast<unsigned long>(seconds / 3600),
@@ -115,6 +125,51 @@ void Display::draw(const ButtonController& buttons, uint32_t now) {
     oled_.drawStr(4, 38, text);
     snprintf(text, sizeof(text), "Heap %lu B", static_cast<unsigned long>(ESP.getFreeHeap()));
     oled_.drawStr(4, 50, text);
+  } else if (buttons.page() == 3) {
+    oled_.setFont(u8g2_font_5x7_tr);
+    oled_.drawStr(4, 24, "NETWORK");
+    oled_.drawStr(4, 34, network.stateText());
+    // SSIDs are at most 32 bytes, but the display has room for 19 here.
+    // Replace non-ASCII/control bytes and mark truncation explicitly.
+    char name[20] = {};
+    const char* source = network.ssid();
+    uint8_t length = 0;
+    while (length < 19 && source[length]) {
+      const uint8_t ch = static_cast<uint8_t>(source[length]);
+      name[length++] = ch >= 32 && ch <= 126 ? char(ch) : '?';
+    }
+    if (length == 19 && source[length]) {
+      name[16] = name[17] = name[18] = '.';
+    }
+    snprintf(text, sizeof(text), "SSID %s", name[0] ? name : "--");
+    oled_.drawStr(4, 44, text);
+    snprintf(text, sizeof(text), "IP %s",
+             network.connected() ? network.ip().toString().c_str() : "--");
+    oled_.drawStr(4, 54, text);
+  } else if (buttons.page() == 4) {
+    oled_.setFont(u8g2_font_5x7_tr);
+    oled_.drawStr(4, 24, "SIGNAL");
+    if (network.connected()) {
+      snprintf(text, sizeof(text), "RSSI %ld dBm", static_cast<long>(network.rssi()));
+    } else snprintf(text, sizeof(text), "RSSI unavailable");
+    oled_.drawStr(4, 34, text);
+    if (network.connected()) snprintf(text, sizeof(text), "Channel %u", network.channel());
+    else snprintf(text, sizeof(text), "Channel --");
+    oled_.drawStr(4, 44, text);
+    snprintf(text, sizeof(text), "Losses %lu", static_cast<unsigned long>(network.losses()));
+    oled_.drawStr(4, 54, text);
+  } else {
+    oled_.setFont(u8g2_font_5x7_tr);
+    oled_.drawStr(4, 24, "ADDRESSING");
+    snprintf(text, sizeof(text), "Mask %s",
+             network.connected() ? network.subnet().toString().c_str() : "--");
+    oled_.drawStr(4, 34, text);
+    snprintf(text, sizeof(text), "GW   %s",
+             network.connected() ? network.gateway().toString().c_str() : "--");
+    oled_.drawStr(4, 44, text);
+    snprintf(text, sizeof(text), "DNS  %s",
+             network.connected() ? network.dns().toString().c_str() : "--");
+    oled_.drawStr(4, 54, text);
   }
 
   // A progress strip remains visible on diagnostic pages as B4 is held.
@@ -123,14 +178,20 @@ void Display::draw(const ButtonController& buttons, uint32_t now) {
   oled_.drawStr(4, 62, buttons.waitingForRelease() ? "Release all buttons" : "B1< B2>   B4 hold: exit");
 }
 
-void Display::update(const ButtonController& buttons, uint32_t now) {
+void Display::update(const ButtonController& buttons, const Network& network,
+                     uint8_t eventMask, uint32_t now) {
+  if (eventMask) {
+    feedback_ = true;
+    feedbackAt_ = now;
+  }
+  if (feedback_ && uint32_t(now - feedbackAt_) >= 1200) feedback_ = false;
   uptimeMs_ += uint32_t(now - previousTick_);
   previousTick_ = now;
   if (!available_) return;
   if (!sending_) {
     if (uint32_t(now - lastFrameAt_) < 40) return;  // At most 25 frames/second.
     lastFrameAt_ = now;
-    draw(buttons, now);
+    draw(buttons, network, now);
     nextRow_ = 0;
     sending_ = true;
   }

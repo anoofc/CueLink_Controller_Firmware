@@ -2,9 +2,11 @@
 
 #include "buttons.h"
 #include "display.h"
+#include "network.h"
 
 ButtonController buttons;
 Display display;
+Network network;
 bool serialWasConnected = false;
 
 void setup() {
@@ -12,12 +14,14 @@ void setup() {
   Serial.printf("\nCueLink Controller %s\n", firmwareVersion);
   buttons.begin(millis());
   display.begin();
+  network.begin(millis());
   Serial.println("[MODE] RUN; held startup buttons must be released to arm.");
 }
 
 void loop() {
   const uint32_t now = millis();
   const ButtonController::Events events = buttons.update(now);
+  network.update(now);
   const bool serialConnected = bool(Serial);
   if (serialConnected && !serialWasConnected) {
     // USB monitors commonly attach after setup has already printed its banner.
@@ -25,6 +29,7 @@ void loop() {
     Serial.printf("\n[READY] CueLink Controller %s; uptime=%lu ms\n", firmwareVersion,
                   static_cast<unsigned long>(now));
     display.logStatus();
+    network.logStatus();
     Serial.printf("[MODE] %s\n", buttons.mode() == Mode::Run ? "RUN" : "DIAGNOSTICS");
   }
   serialWasConnected = serialConnected;
@@ -38,5 +43,5 @@ void loop() {
     Serial.printf("[MODE] %s; release all buttons to continue.\n",
                   buttons.mode() == Mode::Run ? "RUN" : "DIAGNOSTICS");
   }
-  display.update(buttons, now);
+  display.update(buttons, network, events.shortPressMask, now);
 }
