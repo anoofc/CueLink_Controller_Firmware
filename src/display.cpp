@@ -59,7 +59,8 @@ void Display::drawIndicators(const ButtonController& buttons, uint8_t y) {
   }
 }
 
-void Display::draw(const ButtonController& buttons, const Network& network, uint32_t now) {
+void Display::draw(const ButtonController& buttons, const Network& network,
+                    const Commands& commands, uint32_t now) {
   oled_.clearBuffer();
   oled_.setFont(u8g2_font_6x12_tr);
   oled_.drawStr(4, 10, "CueLink");
@@ -67,10 +68,12 @@ void Display::draw(const ButtonController& buttons, const Network& network, uint
   if (buttons.mode() == Mode::Run) {
     oled_.drawStr(106, 10, "RUN");
   } else {
+    oled_.setFont(u8g2_font_5x7_tr);
     snprintf(text, sizeof(text), "DIAG %u/%u", buttons.page() + 1,
              ButtonController::pageCount);
-    oled_.drawStr(76, 10, text);
+    oled_.drawStr(74, 10, text);
   }
+  oled_.setFont(u8g2_font_6x12_tr);
   oled_.drawHLine(4, 13, 120);
 
   const uint32_t hold = buttons.holdElapsed(now);
@@ -91,8 +94,8 @@ void Display::draw(const ButtonController& buttons, const Network& network, uint
       snprintf(text, sizeof(text), "Release all buttons");
     } else if (hold) {
       snprintf(text, sizeof(text), "Hold B4: diagnostics");
-    } else if (feedback_ && buttons.lastEvent() >= 0) {
-      snprintf(text, sizeof(text), "B%d short press", buttons.lastEvent() + 1);
+    } else if (commands.feedbackActive()) {
+      commands.feedback(text, sizeof(text));
     } else {
       snprintf(text, sizeof(text), "Hold B4 5s: diagnostics");
     }
@@ -158,7 +161,7 @@ void Display::draw(const ButtonController& buttons, const Network& network, uint
     oled_.drawStr(4, 44, text);
     snprintf(text, sizeof(text), "Losses %lu", static_cast<unsigned long>(network.losses()));
     oled_.drawStr(4, 54, text);
-  } else {
+  } else if (buttons.page() == 5) {
     oled_.setFont(u8g2_font_5x7_tr);
     oled_.drawStr(4, 24, "ADDRESSING");
     snprintf(text, sizeof(text), "Mask %s",
@@ -170,6 +173,48 @@ void Display::draw(const ButtonController& buttons, const Network& network, uint
     snprintf(text, sizeof(text), "DNS  %s",
              network.connected() ? network.dns().toString().c_str() : "--");
     oled_.drawStr(4, 54, text);
+  } else if (buttons.page() < 10) {
+    oled_.setFont(u8g2_font_5x7_tr);
+    const uint8_t button = buttons.page() - 6;
+    const auto& mapping = commands.mapping(button);
+    snprintf(text, sizeof(text), "B%u %s DESTINATION", button + 1,
+             Command::protocolText(mapping.action.protocol));
+    oled_.drawStr(4, 24, text);
+    Command::IPv4 address;
+    const auto status = Command::validateDestination(mapping.destination, address);
+    if (status == Command::DestinationStatus::Valid) {
+      snprintf(text, sizeof(text), "%u.%u.%u.%u", address.octets[0], address.octets[1],
+               address.octets[2], address.octets[3]);
+    } else snprintf(text, sizeof(text), "%s",
+                     status == Command::DestinationStatus::Unset ? "IP unset" : "IP/port invalid");
+    oled_.drawStr(4, 34, text);
+    snprintf(text, sizeof(text), "Port %lu", static_cast<unsigned long>(mapping.destination.port));
+    oled_.drawStr(4, 44, text);
+    const auto result = commands.configurationResult(button);
+    oled_.drawStr(4, 54, result == Commands::Result::None ? "Development mapping" :
+                  Commands::resultText(result));
+  } else if (buttons.page() == 10) {
+    oled_.setFont(u8g2_font_5x7_tr);
+    oled_.drawStr(4, 24, "LAST SEND (LOCAL ONLY)");
+    const auto& last = commands.last();
+    if (last.result != Commands::Result::None) {
+      snprintf(text, sizeof(text), "B%u %s", last.button + 1, Command::protocolText(last.protocol));
+      oled_.drawStr(4, 34, text);
+      snprintf(text, sizeof(text), "%uB source %u", static_cast<unsigned>(last.length), last.sourcePort);
+      oled_.drawStr(4, 54, text);
+    }
+    oled_.drawStr(4, 44, Commands::resultText(last.result));
+  } else {
+    oled_.setFont(u8g2_font_5x7_tr);
+    const auto& counts = commands.counts();
+    snprintf(text, sizeof(text), "Submitted %lu", static_cast<unsigned long>(counts.submitted));
+    oled_.drawStr(4, 24, text);
+    snprintf(text, sizeof(text), "Offline drops %lu", static_cast<unsigned long>(counts.offline));
+    oled_.drawStr(4, 34, text);
+    snprintf(text, sizeof(text), "Local fails %lu", static_cast<unsigned long>(counts.localFailures));
+    oled_.drawStr(4, 44, text);
+    snprintf(text, sizeof(text), "Config drops %lu", static_cast<unsigned long>(counts.invalid));
+    oled_.drawStr(4, 54, text);
   }
 
   // A progress strip remains visible on diagnostic pages as B4 is held.
@@ -179,19 +224,14 @@ void Display::draw(const ButtonController& buttons, const Network& network, uint
 }
 
 void Display::update(const ButtonController& buttons, const Network& network,
-                     uint8_t eventMask, uint32_t now) {
-  if (eventMask) {
-    feedback_ = true;
-    feedbackAt_ = now;
-  }
-  if (feedback_ && uint32_t(now - feedbackAt_) >= 1200) feedback_ = false;
+                     const Commands& commands, uint32_t now) {
   uptimeMs_ += uint32_t(now - previousTick_);
   previousTick_ = now;
   if (!available_) return;
   if (!sending_) {
     if (uint32_t(now - lastFrameAt_) < 40) return;  // At most 25 frames/second.
     lastFrameAt_ = now;
-    draw(buttons, network, now);
+    draw(buttons, network, commands, now);
     nextRow_ = 0;
     sending_ = true;
   }

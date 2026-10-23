@@ -9,7 +9,7 @@ class ButtonController {
   static constexpr uint8_t count = 4;
   static constexpr uint32_t debounceMs = 30;
   static constexpr uint32_t holdMs = 5000;
-  static constexpr uint8_t pageCount = 6;
+  static constexpr uint8_t pageCount = 12;
 
   struct Events {
     uint8_t shortPressMask = 0;

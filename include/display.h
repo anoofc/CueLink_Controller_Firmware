@@ -4,18 +4,20 @@
 #include "buttons.h"
 #include "pins.h"
 #include "network.h"
+#include "commands.h"
 
-constexpr char firmwareVersion[] = "M2 / 0.2.0";
+constexpr char firmwareVersion[] = "M3 / 0.3.0";
 
 class Display {
  public:
   void begin();
   void update(const ButtonController& buttons, const Network& network,
-              uint8_t eventMask, uint32_t now);
+              const Commands& commands, uint32_t now);
   void logStatus() const;
 
  private:
-  void draw(const ButtonController& buttons, const Network& network, uint32_t now);
+  void draw(const ButtonController& buttons, const Network& network,
+            const Commands& commands, uint32_t now);
   void drawIndicators(const ButtonController& buttons, uint8_t y);
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled_{U8G2_R0, U8X8_PIN_NONE,
                                           Pins::scl, Pins::sda};
@@ -26,6 +28,4 @@ class Display {
   uint32_t lastFrameAt_ = 0;
   uint32_t previousTick_ = 0;
   uint64_t uptimeMs_ = 0;
-  uint32_t feedbackAt_ = 0;
-  bool feedback_ = false;
 };

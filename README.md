@@ -1,9 +1,9 @@
-# CueLink Controller — milestone 2
+# CueLink Controller — milestone 3
 
-Version: `M2 / 0.2.0`. Local buttons, SSD1306 display, diagnostics, and Wi-Fi
-station connectivity with DHCP. Board, USB, monitor, and upload settings are
-unchanged. BLE, OSC, UDP commands, and persistent configuration are outside
-this milestone. No internet access is needed or checked.
+Version: `M3 / 0.3.0`. Local buttons, SSD1306 display, diagnostics, Wi-Fi
+station/DHCP, and binary OSC-over-UDP or exact raw UDP output. Board, USB,
+monitor, and upload settings are unchanged. BLE and persistent configuration
+are outside this milestone. No internet access is needed or checked.
 
 ## Local Wi-Fi configuration
 
@@ -18,6 +18,91 @@ serial and the run screen show Wi-Fi not configured. An empty password supports
 an open network. Rebuild and manually upload after changing the local file.
 Credentials are compiled into the firmware; this is development configuration,
 not provisioning or a configuration store.
+
+## Development command configuration
+
+Edit **`include/commands.dev.h`**. Set `DevelopmentCommands::destinationIpv4`
+to the receiving computer's actual LAN IPv4 address. It defaults to the empty
+string, disabling transmission; no server IP is assumed. Do not enter the
+controller's address, `127.0.0.1`, a hostname, or a URL. Ports and actions are
+editable in the same file. Each button has its own destination entry; replace
+its reference to `destinationIpv4` with another numeric IP if needed.
+Rebuild and manually upload after editing. These are development examples,
+not permanent presets or saved settings.
+
+| Button | Protocol | OSC address / raw bytes | Arguments | Remote port |
+| --- | --- | --- | --- | --- |
+| B1 | OSC over UDP | `/composition/columns/1/connect` | int32 `1` | 7000 |
+| B2 | OSC over UDP | `/composition/columns/2/connect` | int32 `1` | 7000 |
+| B3 | Raw UDP | `CUELINK_B3` | — | 9000 |
+| B4 | Raw UDP | `CUELINK_B4` | — | 9000 |
+
+The raw examples are exactly 10 bytes each: no newline, NUL terminator, or
+padding. `rawLength` controls the exact number of bytes, so arbitrary binary
+arrays (including embedded zero bytes) also work. OSC arguments use
+`Command::Argument::int32(...)`, `::float32(...)`, or `::string("...")` in an
+argument array; update `argumentCount` when changing that array. Strings are
+ASCII. OSC addresses must start with `/`, name a path, and contain no whitespace
+or control bytes. The encoder emits address, comma-prefixed type tags, and
+arguments with NUL termination, four-byte padding, and big-endian numeric data,
+following the [OSC 1.0 specification](https://opensoundcontrol.stanford.edu/spec-1_0.html).
+OSC is never sent as a plain-text command. Bundles and additional OSC types are
+outside this milestone.
+
+## Command transport and results
+
+`command.cpp` handles validation/encoding, `commands.cpp` handles run events and
+results, and `udp_transport.cpp` owns one reusable nonblocking socket using the
+installed framework's lwIP socket API. There are no new library dependencies.
+One button maps to one action and one destination; those are separate model
+objects so future multi-action configuration need not change the encoder.
+
+The source socket binds port zero, asking the OS to choose a local port.
+Before sending, its selected port is checked against **all four remote ports**.
+A collision causes a fresh bind, bounded to eight setup attempts. No packet is
+sent during setup. The source is never deliberately bound to 7000 or 9000.
+The socket is closed on disconnect, Wi-Fi loss-count changes, IP changes, or a
+local failure, and reopened only for a new valid trigger. Wi-Fi reconnection
+alone sends nothing. Device IPv4 addresses shown on network pages refer to the
+controller, while the new mapping pages show the receiver.
+
+Only the existing run-mode short-event mask can trigger output: B1–B3 once on
+stable press and B4 once on short release. Five-second B4 holds, diagnostic
+navigation, startup, mode changes, and held buttons send nothing. Simultaneous
+short events each get one attempt, in button order. Only the most recent result
+is shown in the brief footer; every attempt is logged and counted.
+
+There are no automatic command retries or offline command queues. Offline
+presses are discarded, including a press in the same loop that first observes
+newly acquired Wi-Fi. A fixed 1024-byte working buffer is encoded per attempt
+and immediately invalidated afterward. Packets over 1024 bytes, empty raw
+payloads, unsupported types, malformed OSC settings, invalid ports (outside
+1..65535), and invalid IPv4 destinations are rejected. Numeric unicast IPv4 is
+supported; unspecified, loopback, multicast, and limited broadcast addresses
+are rejected. There is no hostname lookup or server/internet probe.
+
+Results distinguish:
+
+- **Local submission**: the local UDP stack accepted the whole datagram.
+- **Not sent: offline**: Wi-Fi/IP was unavailable when processing the event.
+- **Set/fix destination**: the destination was unset or invalid.
+- **Invalid/oversized cmd**: encoding/configuration failed or exceeded 1024 bytes.
+- **Local UDP failure**: socket setup or the single `sendto` call failed.
+
+When multiple problems exist, offline takes precedence, then destination, then
+encoding, then transport. Serial emits exactly one `[SEND]` record per attempt
+with button, protocol, validated destination (or unset/invalid), remote port,
+encoded byte count, source port, and local result. An invalid encoding has a
+zero byte count; source zero means socket setup was not completed. Existing
+`[SHORT]` records continue to describe button events, not extra sends. Wi-Fi
+passwords and command argument contents are never logged.
+
+The footer uses `B1 OSC sent`, `B3 UDP sent`, `Not sent: offline`, or
+`Set destination`, as appropriate, then returns to the normal hint after about
+1.5 seconds. The Wi-Fi state and device IP remain visible throughout. **Sent
+means local submission only: UDP does not acknowledge receipt or execution.**
+Stopping Resolume or pointing at an unused port can still produce a local
+submission. No result declares the receiver online or a cue executed.
 
 ## Network behavior
 
@@ -84,8 +169,8 @@ resumes. Diagnostic navigation never increments run counters.
 
 The run screen retains the CueLink header and four physical button indicators.
 Dedicated network lines show Not configured, Connecting, Connected, or
-Reconnecting, plus the current IPv4 address when connected. A short-event footer
-appears for 1.2 seconds without replacing network information. The B4 progress
+Reconnecting, plus the current IPv4 address when connected. A command-result footer
+appears for 1.5 seconds without replacing network information. The B4 progress
 strip only appears during an active hold. The original OLED address probing,
 initialization fix, and one-tile-row-per-loop transfers remain intact. Display
 updates start at most 25 times per second; a missing OLED leaves other work active.
@@ -99,6 +184,15 @@ page and B2 the next, with wrapping; B3 does nothing. Pages are:
 4. Network state, safely truncated SSID, and current IPv4 address.
 5. Signal: RSSI in dBm, channel, and connection-loss count.
 6. Addressing: subnet mask, gateway, and primary DNS.
+7. B1 protocol and destination IP/port, with configuration status.
+8. B2 protocol and destination IP/port, with configuration status.
+9. B3 protocol and destination IP/port, with configuration status.
+10. B4 protocol and destination IP/port, with configuration status.
+11. Last send result, button/protocol, encoded length, and source port used.
+12. Successful local submissions, offline drops, local failures, and configuration drops.
+
+The last-send page is historical, including its source port. It is not an
+indication that a transport is currently open. Counts reset on reboot.
 
 Disconnected addresses and channel show `--`; RSSI shows unavailable. SSID text
 is limited to 19 display characters with an ellipsis on truncation; unsupported
@@ -128,6 +222,67 @@ Press RESET if the application does not start. Monitor DTR/RTS remain zero; a
 version/OLED/mode/network summary prints when USB serial attaches. Exit the
 monitor with Ctrl+C before another upload.
 
+## Test raw UDP on a computer
+
+1. Connect the computer and controller to a mutually reachable LAN (2.4 GHz
+   Wi-Fi for the controller). Find the computer's LAN IPv4 address and enter it
+   as `destinationIpv4` in `include/commands.dev.h`. Leave the B3/B4 remote
+   ports at 9000. Rebuild and manually upload using the commands above.
+2. On that receiving computer, from `firmware/`, run:
+
+   ```sh
+   python3 tools/udp_receiver.py --port 9000
+   ```
+
+   The script uses only Python's standard library and listens on all local
+   IPv4 interfaces by default. Allow inbound UDP 9000 through the computer's
+   firewall and check that AP/client isolation is disabled if packets do not
+   arrive. Use `--bind COMPUTER_LAN_IP` to choose a specific local interface.
+   Stop with Ctrl+C. For a bounded run use
+   `--port 9000 --count 2 --timeout 60`.
+3. Wait for the controller to show Connected and a device IP. Press B3, then
+   briefly press/release B4. Expect sender IP/source port, byte count, hex, and
+   readable text for each datagram. B3 must be exactly 10 bytes:
+   `43 55 45 4c 49 4e 4b 5f 42 33`; B4 ends in `34` instead of `33`.
+   Neither packet may have a final `00` or `0a`. The source port should remain
+   the same across these sends and differ from both 7000 and 9000.
+4. Hold B3: only its initial press sends. Hold B4 for five seconds: no B4 packet
+   should arrive. Navigate diagnostics and exit: no packets. Check pages 7–12
+   for mappings, last local result, byte count, and totals.
+5. Turn off the AP, wait for Reconnecting, and press buttons: expect offline
+   drops. Restore the AP: no earlier press may appear. Only a fresh short event
+   should send, using a reinitialized socket (its numerical source port may be
+   reused by the OS). With destination unset, connected presses must report
+   Set destination and submit no packets.
+
+## Test OSC with the actual Resolume installation
+
+The B1/B2 OSC mappings are examples and **must be checked against the receiving
+Resolume version and composition during physical testing**.
+
+1. Set `destinationIpv4` to the Resolume computer's actual LAN address. In
+   Resolume's Preferences, enable OSC input and select incoming UDP port 7000
+   to match B1/B2, or edit their remote ports to match your installation.
+2. Use **Shortcuts > Edit OSC** and select the desired column controls. Inspect
+   the displayed addresses, type tags, and accepted values. Check both example
+   paths and int32 value `1`; adjust the development mappings if your target
+   requires different settings. Exit shortcut editing before the functional
+   test. See the official [Resolume OSC guide](https://resolume.com/support/en/osc).
+3. Rebuild and manually upload any configuration changes. Allow inbound UDP
+   7000 on the receiving computer and make sure the LAN permits peer traffic.
+   Enable Resolume's incoming OSC monitor using the monitor icon in its OSC
+   preferences; see [Resolume preferences](https://resolume.com/support/preferences).
+4. Press B1 and B2 separately. Confirm each expected address and int32 value in
+   the incoming monitor, then visually confirm the intended column action.
+   The example messages are 40-byte binary OSC packets with `,i` type tags and
+   the final four bytes `00 00 00 01`. CueLink's sent feedback and local totals
+   alone cannot establish that Resolume received or acted on them.
+5. Check held buttons, B4 long holds, diagnostic navigation, and Wi-Fi loss/
+   recovery again: no repeats or stale commands. To inspect raw OSC bytes
+   independently, close/disable Resolume's OSC listener first and run the
+   Python receiver on port 7000. Stop that receiver before re-enabling Resolume
+   so they do not compete for the same incoming port.
+
 ## Manual verification on hardware
 
 1. With no local header (back up your own file first), build and manually upload.
@@ -143,7 +298,7 @@ monitor with Ctrl+C before another upload.
 4. Hold B4 for five seconds: progress should appear only during the hold, followed
    by one mode change and no short event. Keep holding another five seconds;
    no additional mode change should occur. Release all buttons to unlock.
-5. Navigate all six pages with B1/B2, including wrapping in both directions.
+5. Navigate all twelve pages with B1/B2, including wrapping in both directions.
    Confirm the three original pages, truncated SSID, current IP, RSSI, channel,
    loss count, subnet, gateway, and DNS. Navigation must not increment counters.
    Check a long SSID and readability within 128×64. Test B4 exit from each page.
@@ -162,7 +317,7 @@ monitor with Ctrl+C before another upload.
    missing OLED still permits serial events and Wi-Fi recovery. Reconnect wiring
    only with power removed; repeat at `0x3D` if address selection is available.
 
-No automatic upload or physical hardware testing was performed for milestone 2.
+No automatic upload or physical hardware testing was performed for milestone 3.
 Actual radio recovery, USB behavior, electrical wiring, OLED readability, and
 loop latency require these hardware checks. The ESP32-S3 uses 2.4 GHz Wi-Fi;
 enterprise/captive-portal provisioning and hostname-based discovery are not
@@ -191,3 +346,20 @@ sh tests/network/run.sh
 
 These checks simulate driver behavior; they do not test actual RF, DHCP,
 framework event timing, cross-task synchronization, or OLED pixels.
+
+Command checks compile the actual encoder and transport without Arduino, then
+compile the real dispatcher and button state machine with mocked radio/socket
+boundaries. No local credentials are read. Run:
+
+```sh
+sh tests/commands/run.sh
+```
+
+This covers golden OSC int32/float32 network byte order and type tags, string
+padding and alignment, mixed arguments, the 1024-byte boundary, invalid settings,
+exact development raw payload lengths, native localhost datagrams and reusable
+source ports, event gating, offline drops/no replay, transport reset, local
+failure/no retries, and feedback timer rollover. It also runs a bounded
+localhost-only check of the Python receiver (`--count 1 --timeout 2`). Native
+host socket results do not verify ESP32 lwIP timing, actual radio delivery,
+OLED pixels, or the receiving Resolume installation.
