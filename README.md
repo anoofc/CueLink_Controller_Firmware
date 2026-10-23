@@ -1,9 +1,12 @@
-# CueLink Controller — milestone 3
+# CueLink Controller — milestone 4A
 
-Version: `M3 / 0.3.0`. Local buttons, SSD1306 display, diagnostics, Wi-Fi
+Version: `M4A / 0.4.0`. Local buttons, SSD1306 display, diagnostics, Wi-Fi
 station/DHCP, and binary OSC-over-UDP or exact raw UDP output. Board, USB,
-monitor, and upload settings are unchanged. BLE and persistent configuration
-are outside this milestone. No internet access is needed or checked.
+monitor, and upload settings are unchanged. Read-only BLE discovery and live
+status now connect to the iOS CueLink Config app. Configuration writes, credential
+transfer, BLE command triggering, bonding, and persistent configuration remain
+outside this milestone. No internet access is needed or checked. CueLink is a
+general-purpose tool; the Resolume OSC paths below are editable examples only.
 
 ## Local Wi-Fi configuration
 
@@ -176,7 +179,8 @@ initialization fix, and one-tile-row-per-loop transfers remain intact. Display
 updates start at most 25 times per second; a missing OLED leaves other work active.
 
 Hold B4 for five seconds to enter or exit diagnostics. B1 selects the previous
-page and B2 the next, with wrapping; B3 does nothing. Pages are:
+page and B2 the next, with wrapping. B3 enables BLE discovery only on the new
+App connection page; elsewhere in diagnostics it does nothing. Pages are:
 
 1. Live button states.
 2. Run short-press counters.
@@ -190,6 +194,7 @@ page and B2 the next, with wrapping; B3 does nothing. Pages are:
 10. B4 protocol and destination IP/port, with configuration status.
 11. Last send result, button/protocol, encoded length, and source port used.
 12. Successful local submissions, offline drops, local failures, and configuration drops.
+13. App connection: BLE Off/Discoverable/Connected, device name, countdown; B3 enables or renews 120 seconds of discovery.
 
 The last-send page is historical, including its source port. It is not an
 indication that a transport is currently open. Counts reset on reboot.
@@ -298,7 +303,7 @@ Resolume version and composition during physical testing**.
 4. Hold B4 for five seconds: progress should appear only during the hold, followed
    by one mode change and no short event. Keep holding another five seconds;
    no additional mode change should occur. Release all buttons to unlock.
-5. Navigate all twelve pages with B1/B2, including wrapping in both directions.
+5. Navigate all thirteen pages with B1/B2, including wrapping in both directions.
    Confirm the three original pages, truncated SSID, current IP, RSSI, channel,
    loss count, subnet, gateway, and DNS. Navigation must not increment counters.
    Check a long SSID and readability within 128×64. Test B4 exit from each page.
@@ -317,7 +322,7 @@ Resolume version and composition during physical testing**.
    missing OLED still permits serial events and Wi-Fi recovery. Reconnect wiring
    only with power removed; repeat at `0x3D` if address selection is available.
 
-No automatic upload or physical hardware testing was performed for milestone 3.
+No automatic upload, app installation, or real-device BLE testing was performed for milestone 4A.
 Actual radio recovery, USB behavior, electrical wiring, OLED readability, and
 loop latency require these hardware checks. The ESP32-S3 uses 2.4 GHz Wi-Fi;
 enterprise/captive-portal provisioning and hostname-based discovery are not
@@ -363,3 +368,29 @@ failure/no retries, and feedback timer rollover. It also runs a bounded
 localhost-only check of the Python receiver (`--count 1 --timeout 2`). Native
 host socket results do not verify ESP32 lwIP timing, actual radio delivery,
 OLED pixels, or the receiving Resolume installation.
+
+## BLE app connection — Milestone 4A
+
+Hold B4 five seconds to enter diagnostics, select **App connection** with B1/B2,
+and press B3. Discovery advertises `CueLink-XXXX` for 120 seconds. An active app
+session can continue beyond the timer; disconnection only restarts advertising
+while that original or explicitly renewed window remains active. Another B3
+press renews discovery; a hold does not repeat. B3 on this page never sends a cue.
+
+The iOS app at `../flutter/cuelink_config/` provides service-filtered discovery,
+read-only device information, and live Wi-Fi/IP/RSSI/uptime/mode. No configuration
+or credential data is exposed. Both binary BLE values are versioned and only
+12 bytes; no MTU negotiation is needed. Notify rate is capped at about 1 Hz.
+
+See [docs/ble_protocol.md](docs/ble_protocol.md) for UUIDs, all byte fields, pinned
+dependency versions/licenses, app lifecycle policy, and the physical iPhone test
+checklist. Firmware BLE uses NimBLE-Arduino 2.3.9, Apache-2.0. The added build
+define limits BLE to one connection; board, USB, and upload settings are preserved.
+
+```sh
+sh tests/ble/run.sh
+```
+
+This host check validates the encoder against shared Dart/C++ golden vectors,
+the two-minute discovery timer, explicit renewal, and millis rollover. Existing
+button tests now also check the separate B3 discovery event and counter isolation.

@@ -60,7 +60,7 @@ void Display::drawIndicators(const ButtonController& buttons, uint8_t y) {
 }
 
 void Display::draw(const ButtonController& buttons, const Network& network,
-                    const Commands& commands, uint32_t now) {
+                    const Commands& commands, const AppConnection& app, uint32_t now) {
   oled_.clearBuffer();
   oled_.setFont(u8g2_font_6x12_tr);
   oled_.drawStr(4, 10, "CueLink");
@@ -204,7 +204,7 @@ void Display::draw(const ButtonController& buttons, const Network& network,
       oled_.drawStr(4, 54, text);
     }
     oled_.drawStr(4, 44, Commands::resultText(last.result));
-  } else {
+  } else if (buttons.page() == 11) {
     oled_.setFont(u8g2_font_5x7_tr);
     const auto& counts = commands.counts();
     snprintf(text, sizeof(text), "Submitted %lu", static_cast<unsigned long>(counts.submitted));
@@ -215,6 +215,16 @@ void Display::draw(const ButtonController& buttons, const Network& network,
     oled_.drawStr(4, 44, text);
     snprintf(text, sizeof(text), "Config drops %lu", static_cast<unsigned long>(counts.invalid));
     oled_.drawStr(4, 54, text);
+  } else {
+    oled_.setFont(u8g2_font_5x7_tr);
+    oled_.drawStr(4, 24, "APP CONNECTION");
+    oled_.drawStr(4, 34, app.stateText());
+    oled_.drawStr(4, 44, app.name());
+    if (app.remainingSeconds(now)) {
+      snprintf(text, sizeof(text), "B3: renew / %lus left",
+               static_cast<unsigned long>(app.remainingSeconds(now)));
+      oled_.drawStr(4, 54, text);
+    } else oled_.drawStr(4, 54, "B3: discover for 120s");
   }
 
   // A progress strip remains visible on diagnostic pages as B4 is held.
@@ -224,14 +234,14 @@ void Display::draw(const ButtonController& buttons, const Network& network,
 }
 
 void Display::update(const ButtonController& buttons, const Network& network,
-                     const Commands& commands, uint32_t now) {
+                     const Commands& commands, const AppConnection& app, uint32_t now) {
   uptimeMs_ += uint32_t(now - previousTick_);
   previousTick_ = now;
   if (!available_) return;
   if (!sending_) {
     if (uint32_t(now - lastFrameAt_) < 40) return;  // At most 25 frames/second.
     lastFrameAt_ = now;
-    draw(buttons, network, commands, now);
+    draw(buttons, network, commands, app, now);
     nextRow_ = 0;
     sending_ = true;
   }

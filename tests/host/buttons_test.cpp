@@ -143,6 +143,25 @@ int main() {
     assert(f.edge(0, true).shortPressMask == 1);
     assert(f.buttons.shortPresses(3) == 0);
   }
+  // B3 enables discovery only on App connection, never as a run short action.
+  {
+    Fixture f;
+    f.arm();
+    f.enterDiagnostics();
+    f.edge(3, false);
+    f.edge(0, true);  // Wrap directly to the new last page.
+    f.edge(0, false);
+    assert(f.buttons.page() == ButtonController::appConnectionPage);
+    const auto request = f.edge(2, true);
+    assert(request.appConnectionRequested && request.shortPressMask == 0);
+    assert(!f.tick(6000).appConnectionRequested);
+    assert(f.buttons.shortPresses(2) == 0);
+    f.edge(2, false);
+    f.edge(1, true);
+    f.edge(1, false);
+    assert(!f.edge(2, true).appConnectionRequested);
+    assert(f.buttons.shortPresses(2) == 0);
+  }
   // Both debounce and the five-second hold survive uint32_t millis rollover.
   {
     Fixture f(UINT32_MAX - 40);

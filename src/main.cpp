@@ -9,6 +9,7 @@ ButtonController buttons;
 Display display;
 Network network;
 Commands commands(DevelopmentCommands::buttons);
+AppConnection appConnection;
 bool serialWasConnected = false;
 
 void setup() {
@@ -18,6 +19,7 @@ void setup() {
   display.begin();
   commands.begin();
   network.begin(millis());
+  appConnection.begin(network, buttons.mode(), millis());
   Serial.println("[MODE] RUN; held startup buttons must be released to arm.");
 }
 
@@ -28,6 +30,7 @@ void loop() {
   network.update(now);
   commands.update(network, now);
   commands.handleEvents(buttons.mode(), events, network, onlineAtEvent, now);
+  appConnection.update(network, buttons.mode(), events.appConnectionRequested, now);
   const bool serialConnected = bool(Serial);
   if (serialConnected && !serialWasConnected) {
     // USB monitors commonly attach after setup has already printed its banner.
@@ -49,5 +52,5 @@ void loop() {
     Serial.printf("[MODE] %s; release all buttons to continue.\n",
                   buttons.mode() == Mode::Run ? "RUN" : "DIAGNOSTICS");
   }
-  display.update(buttons, network, commands, now);
+  display.update(buttons, network, commands, appConnection, now);
 }
