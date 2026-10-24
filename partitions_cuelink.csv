@@ -1,0 +1,10 @@
+# M5: keep boot/OTA/app/default-NVS offsets. Reserve the unused SPIFFS tail
+# for independent configuration NVS; default NVS continues to own BLE bonds.
+# Name,     Type, SubType, Offset,   Size,      Flags
+nvs,        data, nvs,     0x9000,   0x5000,
+otadata,    data, ota,     0xe000,   0x2000,
+app0,       app,  ota_0,   0x10000,  0x330000,
+app1,       app,  ota_1,   0x340000, 0x330000,
+spiffs,     data, spiffs,  0x670000, 0x170000,
+cuelinkcfg, data, nvs,     0x7e0000, 0x10000,
+coredump,   data, coredump,0x7f0000, 0x10000,

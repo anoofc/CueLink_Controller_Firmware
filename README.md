@@ -1,11 +1,22 @@
-# CueLink Controller — Milestone 4B
+# CueLink Controller — Milestone 5
 
-Version `M4B / 0.4.1`: a general-purpose four-button controller for binary OSC,
+Version `M5 / 0.5.0`: a general-purpose four-button controller for binary OSC,
 exact raw UDP and class-compliant USB MIDI 1.0. Each button supports zero to four
 independent enabled triggers, with up to eight destinations per network trigger
 and optional master network routing. Read-only BLE status remains compatible.
-Flutter UI is preserved; BLE writes, provisioning and persistent configuration
-remain outside this milestone.
+The graphite/cyan Flutter design is preserved. Authenticated BLE now supports
+button/routing editors, controller Wi-Fi scans and staged DHCP/static network
+changes, backed by transactional persistent configuration. No remote cue trigger
+or internet-reachability check is implemented.
+
+See **[Milestone 5 schema, authentication, storage and physical acceptance steps](docs/configuration_protocol.md)**.
+On App connection press B3 to authorize, connect the app, open **Buttons, routing
+& network**, then **Load / query device**. Enter the OLED passkey in the iOS system
+pairing dialog. Configuration access requires authenticated encryption and a fresh
+physical authorization after each disconnect. Saved settings take precedence over
+source defaults; `commands.dev.h` and local secrets seed revision zero only when
+no valid saved record exists. Changes require explicit Save button, Save routing
+or Apply network, followed by device acknowledgment and readback.
 
 Edit **`include/commands.dev.h`** for trigger settings. The user's tested endpoint
 **10.128.151.148**, OSC port 7000 and raw UDP port 9000 are preserved. Confirm that
@@ -27,7 +38,8 @@ credentials in the example or commit them.
 
 A missing header or empty SSID builds normally and leaves the radio inactive;
 serial and the run screen show Wi-Fi not configured. An empty password supports
-an open network. Rebuild and manually upload after changing the local file.
+an open network. On an unconfigured device, rebuild and manually upload after changing the local file.
+Saved network settings take precedence; change those through the authenticated app.
 Credentials are compiled into the firmware; this is development configuration,
 not provisioning or a configuration store.
 
@@ -102,7 +114,7 @@ page 15 provides trigger/destination details, cycled with B3. Navigation emits
 no cues. Successful local submission does not establish receiver execution.
 
 Read-only BLE protocol version 1 and both 12-byte formats are unchanged.
-Firmware metadata is 0.4.1 with optional USB MIDI capability bit 4. See
+Firmware metadata is 0.5.0 with USB MIDI bit 4 and authenticated configuration/network bits 5/6. See
 [BLE protocol and physical iPhone checklist](docs/ble_protocol.md).
 
 ## Build and checks
@@ -111,6 +123,7 @@ From `firmware/`:
 
 ```sh
 ~/.platformio/penv/bin/pio run -e seeed_xiao_esp32s3
+sh tests/config/run.sh
 sh tests/commands/run.sh
 sh tests/midi/run.sh
 sh tests/network/run.sh

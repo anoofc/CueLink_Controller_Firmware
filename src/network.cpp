@@ -1,7 +1,8 @@
-#include "serial_log.h"
 #include "network.h"
 
 #include <WiFi.h>
+
+#include "serial_log.h"
 
 #if __has_include("secrets.h")
 #include "secrets.h"
@@ -13,14 +14,43 @@
 #define CUELINK_WIFI_PASSWORD ""
 #endif
 
-const char* Network::ssid() const { return CUELINK_WIFI_SSID; }
+const char* Network::ssid() const { return settings_.ssid.c_str(); }
+NetworkSettings Network::developmentSettings() const {
+  NetworkSettings settings;
+  settings.ssid = CUELINK_WIFI_SSID;
+  settings.password = CUELINK_WIFI_PASSWORD;
+  return settings;
+}
+void Network::configure(const NetworkSettings& settings, uint32_t now) {
+  settings_ = settings;
+  settingsProvided_ = true;
+  configured_ = !settings_.ssid.empty();
+  if (initialized_) WiFi.disconnect(false, false);
+  attempting_ = false;
+  clearAddressing();
+  nextBackoff_ = 2000;
+  if (!configured_) {
+    setState(State::NotConfigured);
+    return;
+  }
+  if (!initialized_) {
+    begin(now);
+    return;
+  }
+  setState(State::Connecting);
+  startAttempt(now);
+}
 
 const char* Network::stateText() const {
   switch (state_) {
-    case State::NotConfigured: return "Not configured";
-    case State::Connecting: return "Connecting";
-    case State::Connected: return "Connected";
-    case State::Reconnecting: return "Reconnecting";
+    case State::NotConfigured:
+      return "Not configured";
+    case State::Connecting:
+      return "Connecting";
+    case State::Connected:
+      return "Connected";
+    case State::Reconnecting:
+      return "Reconnecting";
   }
   return "Unavailable";
 }
@@ -32,13 +62,14 @@ void Network::setState(State state) {
 }
 
 void Network::begin(uint32_t now) {
-  configured_ = CUELINK_WIFI_SSID[0] != '\0';
+  if (!settingsProvided_) settings_ = developmentSettings();
+  configured_ = !settings_.ssid.empty();
   if (!configured_) {
     FirmwareSerial.println("[Wi-Fi] Wi-Fi not configured");
     return;  // Do not initialize the radio or use any previously stored AP.
   }
-  WiFi.persistent(false);  // Set RAM storage before enabling the radio.
-  WiFi.setAutoReconnect(false);  // This class owns the retry schedule.
+  WiFi.persistent(false);                  // Set RAM storage before enabling the radio.
+  WiFi.setAutoReconnect(false);            // This class owns the retry schedule.
   WiFi.setHostname("cuelink-controller");  // Before starting station mode.
   WiFi.onEvent([this](WiFiEvent_t event, WiFiEventInfo_t info) {
     if (event == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
@@ -64,7 +95,25 @@ void Network::startAttempt(uint32_t now) {
     // A new firmware boot uses DHCP by default; no static config is installed.
     initialized_ = WiFi.mode(WIFI_STA);
   }
-  if (!initialized_ || WiFi.begin(CUELINK_WIFI_SSID, CUELINK_WIFI_PASSWORD) == WL_CONNECT_FAILED) {
+#ifdef ARDUINO
+  auto address = [](const std::string& text) {
+    IPAddress ip;
+    ip.fromString(text.c_str());
+    return ip;
+  };
+  const bool addressing = settings_.dhcp
+                              ? WiFi.config(IPAddress(), IPAddress(), IPAddress())
+                              : WiFi.config(address(settings_.ip), address(settings_.gateway),
+                                            address(settings_.subnet), address(settings_.dns1),
+                                            address(settings_.dns2));
+  if (!addressing) {
+    FirmwareSerial.println("[Wi-Fi] Address configuration failed");
+    retryLater(now);
+    return;
+  }
+#endif
+  if (!initialized_ ||
+      WiFi.begin(settings_.ssid.c_str(), settings_.password.c_str()) == WL_CONNECT_FAILED) {
     FirmwareSerial.println("[Wi-Fi] Could not start connection");
     retryLater(now);
   }
@@ -108,13 +157,22 @@ void Network::update(uint32_t now) {
   lostIp_ = false;
   portEXIT_CRITICAL(&eventMux_);
   if (disconnects) {
-    FirmwareSerial.printf("[Wi-Fi] Disconnect reason=%u (%s); events=%lu\n", reason,
-                  WiFi.disconnectReasonName(static_cast<wifi_err_reason_t>(reason ? reason : 1)),
-                  static_cast<unsigned long>(disconnects));
+    FirmwareSerial.printf(
+        "[Wi-Fi] Disconnect reason=%u (%s); events=%lu\n", reason,
+        WiFi.disconnectReasonName(static_cast<wifi_err_reason_t>(reason ? reason : 1)),
+        static_cast<unsigned long>(disconnects));
   }
   if (lostIp) FirmwareSerial.println("[Wi-Fi] IPv4 lease lost");
 
-  const bool ready = WiFi.status() == WL_CONNECTED && uint32_t(WiFi.localIP()) != 0;
+  bool ready = WiFi.status() == WL_CONNECTED && uint32_t(WiFi.localIP()) != 0;
+#ifdef ARDUINO
+  ready = ready && WiFi.SSID() == settings_.ssid.c_str();
+  if (ready && !settings_.dhcp) {
+    IPAddress expected;
+    expected.fromString(settings_.ip.c_str());
+    ready = WiFi.localIP() == expected;
+  }
+#endif
   if (connected() && (disconnects || lostIp || !ready)) {
     ++losses_;  // Once per loss of an observed successful connection.
     retryLater(now);
@@ -151,11 +209,11 @@ void Network::logStatus() const {
     FirmwareSerial.println("[Wi-Fi] Wi-Fi not configured");
     return;
   }
-  FirmwareSerial.printf("[Wi-Fi] %s; hostname=cuelink-controller; losses=%lu\n",
-                stateText(), static_cast<unsigned long>(losses_));
+  FirmwareSerial.printf("[Wi-Fi] %s; hostname=cuelink-controller; losses=%lu\n", stateText(),
+                        static_cast<unsigned long>(losses_));
   if (!connected()) return;
   FirmwareSerial.printf("[Wi-Fi] IPv4=%s mask=%s gateway=%s DNS=%s; RSSI=%ld dBm channel=%u\n",
-                ip_.toString().c_str(), subnet_.toString().c_str(),
-                gateway_.toString().c_str(), dns_.toString().c_str(),
-                static_cast<long>(rssi_), channel_);
+                        ip_.toString().c_str(), subnet_.toString().c_str(),
+                        gateway_.toString().c_str(), dns_.toString().c_str(),
+                        static_cast<long>(rssi_), channel_);
 }

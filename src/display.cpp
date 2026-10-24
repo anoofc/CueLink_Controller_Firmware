@@ -56,6 +56,8 @@ void Display::drawIndicators(const ButtonController& buttons, const Commands& co
     else oled_.drawRFrame(x, y, 27, 19, 3);
     oled_.setDrawColor(buttons.pressed(i) ? 0 : 1);
     const char* label = commands.buttonValid(i) ? commands.mapping(i).label : "?";
+    char abbreviated[5];
+    if (strlen(label)>4) { snprintf(abbreviated,sizeof(abbreviated),"%.3s.",label); label=abbreviated; }
     oled_.setFont(strlen(label) > 2 ? u8g2_font_5x7_tr : u8g2_font_6x12_tr);
     oled_.drawStr(x + (27 - oled_.getStrWidth(label)) / 2, y + 13, label);
     oled_.setDrawColor(1);
@@ -180,7 +182,7 @@ void Display::draw(const ButtonController& buttons, const Network& network,
     oled_.setFont(u8g2_font_5x7_tr);
     const uint8_t button = buttons.page() - 6;
     const auto& mapping = commands.mapping(button);
-    snprintf(text, sizeof(text), "B%u %s triggers: %u", button + 1,
+    snprintf(text, sizeof(text), "B%u %.12s %u slots", button + 1,
              commands.buttonValid(button) ? mapping.label : "?", static_cast<unsigned>(mapping.count));
     oled_.drawStr(4, 22, text);
     if (!commands.buttonValid(button)) oled_.drawStr(4, 34, "Invalid; not activated");
@@ -220,8 +222,11 @@ void Display::draw(const ButtonController& buttons, const Network& network,
   } else if (buttons.page() == ButtonController::appConnectionPage) {
     oled_.setFont(u8g2_font_5x7_tr);
     oled_.drawStr(4, 24, "APP CONNECTION");
-    oled_.drawStr(4, 34, app.stateText());
-    oled_.drawStr(4, 44, app.name());
+    oled_.drawStr(4, 34, app.authenticated() ? "Authenticated" : app.stateText());
+    if (app.authorizationOpen()&&!app.authenticated()) {
+      snprintf(text,sizeof(text),"Pairing PIN: %06lu",static_cast<unsigned long>(app.passkey()));
+      oled_.drawStr(4,44,text);
+    } else oled_.drawStr(4, 44, app.name());
     if (app.remainingSeconds(now)) {
       snprintf(text, sizeof(text), "B3: renew / %lus left",
                static_cast<unsigned long>(app.remainingSeconds(now)));

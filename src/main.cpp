@@ -14,6 +14,8 @@ UsbMidiPort midiPort;
 Midi::Engine midi(midiPort);
 Commands commands(DevelopmentCommands::configuration, midi);
 AppConnection appConnection;
+NvsConfigStorage configStorage;
+ConfigManager configManager(configStorage);
 bool serialWasConnected = false;
 
 void setup() {
@@ -23,7 +25,9 @@ void setup() {
   buttons.begin(millis());
   display.begin();
   commands.begin();
-  network.begin(millis());
+  configStorage.begin();
+  configManager.begin(network,commands,millis());
+  appConnection.attach(configManager);
   appConnection.begin(network, buttons.mode(), millis());
   FirmwareSerial.println("[MODE] RUN; held startup buttons must be released to arm.");
 }
@@ -37,6 +41,7 @@ void loop() {
   network.update(now);
   commands.update(network, now);
   commands.handleEvents(buttons.mode(), events, network, onlineAtEvent, usbAtEvent, now);
+  configManager.update(now);
   appConnection.update(network, buttons.mode(), events.appConnectionRequested, now);
   const bool serialConnected = bool(FirmwareSerial);
   if (serialConnected && !serialWasConnected) {

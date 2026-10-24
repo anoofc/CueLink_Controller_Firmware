@@ -1,6 +1,9 @@
-#include "serial_log.h"
 #include "app_connection.h"
+
 #include <esp_mac.h>
+#include <esp_system.h>
+
+#include "serial_log.h"
 
 void AppConnection::ServerEvents::onConnect(NimBLEServer*, NimBLEConnInfo&) {
   portENTER_CRITICAL(&owner_.eventMux_);
@@ -13,12 +16,18 @@ void AppConnection::ServerEvents::onDisconnect(NimBLEServer*, NimBLEConnInfo&, i
   portENTER_CRITICAL(&owner_.eventMux_);
   owner_.callbackConnected_ = false;
   owner_.callbackSubscribed_ = false;
+  owner_.physical_ = false;
+  owner_.authenticated_ = false;
+  owner_.mailboxSize_ = 0;
+  owner_.responseSize_ = 0;
+  ++owner_.callbackGeneration_;
   ++owner_.disconnects_;
   owner_.disconnectReason_ = reason;
   portEXIT_CRITICAL(&owner_.eventMux_);
 }
 
-void AppConnection::StatusEvents::onSubscribe(NimBLECharacteristic*, NimBLEConnInfo&, uint16_t value) {
+void AppConnection::StatusEvents::onSubscribe(NimBLECharacteristic*, NimBLEConnInfo&,
+                                              uint16_t value) {
   portENTER_CRITICAL(&owner_.eventMux_);
   owner_.callbackSubscribed_ = (value & 1) != 0;
   portEXIT_CRITICAL(&owner_.eventMux_);
@@ -35,16 +44,26 @@ void AppConnection::begin(const Network& network, Mode mode, uint32_t now) {
     FirmwareSerial.println("[BLE] Initialization failed; BLE disabled.");
     return;
   }
-  NimBLEDevice::setSecurityAuth(false, false, false);  // No bonding or pairing store.
+  NimBLEDevice::setSecurityAuth(true, true, true);
+  NimBLEDevice::setSecurityIOCap(BLE_HS_IO_DISPLAY_ONLY);
   auto* server = NimBLEDevice::createServer();
   server->setCallbacks(&serverEvents_, false);
   server->advertiseOnDisconnect(false);  // Only the main loop owns discovery.
   auto* service = server->createService(CueLinkBle::serviceUuid);
-  auto* information = service->createCharacteristic(CueLinkBle::informationUuid, NIMBLE_PROPERTY::READ,
-                                                     CueLinkBle::payloadSize);
+  auto* information = service->createCharacteristic(CueLinkBle::informationUuid,
+                                                    NIMBLE_PROPERTY::READ, CueLinkBle::payloadSize);
   status_ = service->createCharacteristic(CueLinkBle::statusUuid,
-                  NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY, CueLinkBle::payloadSize);
+                                          NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::NOTIFY,
+                                          CueLinkBle::payloadSize);
   status_->setCallbacks(&statusEvents_);
+  auto* request = service->createCharacteristic(
+      "c0e10004-7a6b-4c8d-9e10-5b2f034a0001",
+      NIMBLE_PROPERTY::WRITE | NIMBLE_PROPERTY::WRITE_ENC | NIMBLE_PROPERTY::WRITE_AUTHEN, 128);
+  request->setCallbacks(&configEvents_);
+  configResponse_ = service->createCharacteristic(
+      "c0e10005-7a6b-4c8d-9e10-5b2f034a0001",
+      NIMBLE_PROPERTY::READ | NIMBLE_PROPERTY::READ_ENC | NIMBLE_PROPERTY::READ_AUTHEN, 20);
+  configResponse_->setCallbacks(&configEvents_);
   uint8_t encoded[CueLinkBle::payloadSize];
   CueLinkBle::encodeInformation(identity, encoded);
   information->setValue(encoded, sizeof(encoded));
@@ -76,17 +95,22 @@ void AppConnection::refresh(const Network& network, Mode mode) {
   if (rssi > 127) rssi = 127;
   uint8_t encoded[CueLinkBle::payloadSize];
   CueLinkBle::encodeStatus(static_cast<uint8_t>(network.state()), ip, int8_t(rssi),
-                          uint32_t(uptimeMs_ / 1000), mode == Mode::Diagnostics, encoded);
+                           uint32_t(uptimeMs_ / 1000), mode == Mode::Diagnostics, encoded);
   status_->setValue(encoded, sizeof(encoded));
 }
 
-void AppConnection::update(const Network& network, Mode mode, bool discoveryRequested, uint32_t now) {
+void AppConnection::update(const Network& network, Mode mode, bool discoveryRequested,
+                           uint32_t now) {
   uptimeMs_ += uint32_t(now - previousTick_);
   previousTick_ = now;
   if (!available_) return;
   window_.update(now);
+  if (!window_.active() && !connected_) physical_ = false;
+  processConfiguration(now);
   if (discoveryRequested) {
     window_.enable(now);
+    if (!authenticated_) passkey_ = esp_random() % 1000000;
+    physical_ = true;
     advertisingFailed_ = false;
     FirmwareSerial.println("[BLE] App discovery enabled for 120 seconds.");
   }
@@ -102,8 +126,9 @@ void AppConnection::update(const Network& network, Mode mode, bool discoveryRequ
     FirmwareSerial.printf("[BLE] App %s.\n", connected ? "connected" : "disconnected");
     refresh(network, mode);
   }
-  if (disconnects) FirmwareSerial.printf("[BLE] Disconnect reason=%d; events=%lu\n", reason,
-                                  static_cast<unsigned long>(disconnects));
+  if (disconnects)
+    FirmwareSerial.printf("[BLE] Disconnect reason=%d; events=%lu\n", reason,
+                          static_cast<unsigned long>(disconnects));
   const bool shouldAdvertise = window_.active() && !connected_ && !advertisingFailed_;
   if (shouldAdvertise && !advertising_->isAdvertising()) {
     if (!advertising_->start()) {
@@ -129,4 +154,88 @@ const char* AppConnection::stateText() const {
   if (connected_) return "Connected";
   if (advertisingFailed_) return "Off (retry B3)";
   return advertising_->isAdvertising() ? "Discoverable" : "Off";
+}
+
+bool AppConnection::secure(const NimBLEConnInfo& peer) const {
+  return Config::authorized(physical_.load(), peer.isEncrypted(), peer.isAuthenticated(),
+                            peer.getSecKeySize());
+}
+uint32_t AppConnection::ServerEvents::onPassKeyDisplay() { return owner_.passkey_.load(); }
+void AppConnection::ServerEvents::onAuthenticationComplete(NimBLEConnInfo& peer) {
+  owner_.authenticated_ = owner_.secure(peer);
+  // Public status remains available to a secure bonded peer without a grant.
+  // Physical authorization is still checked on every config frame and read.
+  if (!peer.isEncrypted() || !peer.isAuthenticated() || peer.getSecKeySize() != 16)
+    NimBLEDevice::getServer()->disconnect(peer.getConnHandle());
+}
+void AppConnection::ConfigEvents::onWrite(NimBLECharacteristic* characteristic,
+                                          NimBLEConnInfo& peer) {
+  const auto value = characteristic->getValue();
+  portENTER_CRITICAL(&owner_.eventMux_);
+  if (!owner_.secure(peer) || owner_.mailboxSize_ || value.size() < 8 || value.size() > 128) {
+    owner_.mailboxRejected_ = true;
+  } else {
+    memcpy(owner_.mailbox_, value.data(), value.size());
+    owner_.mailboxSize_ = value.size();
+    owner_.authenticated_ = true;
+  }
+  portEXIT_CRITICAL(&owner_.eventMux_);
+  // Never leave credentials in the characteristic value after mailbox copy.
+  characteristic->setValue(static_cast<const uint8_t*>(nullptr), 0);
+}
+void AppConnection::ConfigEvents::onRead(NimBLECharacteristic* characteristic,
+                                         NimBLEConnInfo& peer) {
+  uint8_t frame[20];
+  size_t size;
+  portENTER_CRITICAL(&owner_.eventMux_);
+  size = owner_.responseSize_;
+  memcpy(frame, owner_.responseFrame_, size);
+  portEXIT_CRITICAL(&owner_.eventMux_);
+  if (!owner_.secure(peer)) {
+    const uint8_t denied[] = {1, 0x84, 0, 0, 0, 0, 0, 0};
+    characteristic->setValue(denied, sizeof(denied));
+  } else {
+    owner_.authenticated_ = true;
+    characteristic->setValue(frame, size);
+  }
+}
+void AppConnection::processConfiguration(uint32_t now) {
+  uint8_t bytes[128];
+  size_t size;
+  bool rejected;
+  uint32_t generation;
+  portENTER_CRITICAL(&eventMux_);
+  size = mailboxSize_;
+  memcpy(bytes, mailbox_, size);
+  memset(mailbox_, 0, sizeof(mailbox_));
+  mailboxSize_ = 0;
+  rejected = mailboxRejected_;
+  mailboxRejected_ = false;
+  generation = callbackGeneration_;
+  portEXIT_CRITICAL(&eventMux_);
+  if (generation != processedGeneration_) {
+    processedGeneration_ = generation;
+    transfer_.reset();
+    size = 0;
+  }
+  if (rejected) {
+    transfer_.reset();
+    size = 0;
+  }
+  transfer_.update(now);
+  if (size) transfer_.accept(bytes, size, physical_ && authenticated_, now);
+  memset(bytes, 0, sizeof(bytes));
+  if (manager_ && transfer_.complete()) {
+    const auto& request = transfer_.request();
+    std::string reply = manager_->execute(
+        transfer_.id(),
+        Config::crc32(reinterpret_cast<const uint8_t*>(request.data()), request.size()), request,
+        now);
+    transfer_.reply(reply.empty() ? "{\"ok\":true,\"pending\":true}" : reply);
+  }
+  const std::string frame = transfer_.frame();
+  portENTER_CRITICAL(&eventMux_);
+  responseSize_ = frame.size() > 20 ? 0 : frame.size();
+  memcpy(responseFrame_, frame.data(), responseSize_);
+  portEXIT_CRITICAL(&eventMux_);
 }

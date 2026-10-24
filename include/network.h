@@ -1,6 +1,7 @@
 #pragma once
 
 #include <Arduino.h>
+#include "network_settings.h"
 #include <IPAddress.h>
 #include <freertos/FreeRTOS.h>
 
@@ -9,6 +10,9 @@ class Network {
   enum class State { NotConfigured, Connecting, Connected, Reconnecting };
   void begin(uint32_t now);
   void update(uint32_t now);
+  NetworkSettings developmentSettings() const;
+  void configure(const NetworkSettings& settings, uint32_t now);
+  const NetworkSettings& settings() const { return settings_; }
   void logStatus() const;
   State state() const { return state_; }
   const char* stateText() const;
@@ -23,6 +27,8 @@ class Network {
   uint32_t losses() const { return losses_; }
 
  private:
+  NetworkSettings settings_;
+  bool settingsProvided_ = false;
   void startAttempt(uint32_t now);
   void retryLater(uint32_t now);
   void clearAddressing();

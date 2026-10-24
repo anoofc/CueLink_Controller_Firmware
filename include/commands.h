@@ -31,12 +31,13 @@ class Commands {
     uint32_t submitted = 0, partial = 0, offline = 0, invalid = 0, localFailures = 0;
     uint32_t destinationSuccess = 0, destinationFailures = 0;
   };
-  Commands(const Triggers::Configuration& configuration, Midi::Engine& midi) : configuration_(configuration), midi_(midi) {}
-  void begin();
+  Commands(const Triggers::Configuration& configuration, Midi::Engine& midi) : configuration_(&configuration), midi_(midi) {}
+  void begin(bool resetMidi = true);
+  void configure(const Triggers::Configuration& configuration) { configuration_ = &configuration; transport_.stop(); begin(false); }
   void update(const Network& network, uint32_t now);
   void handleEvents(Mode mode, const ButtonController::Events& events, const Network& network,
                     bool onlineAtEvent, bool usbAtEvent, uint32_t now);
-  const Triggers::Button& mapping(uint8_t button) const { return configuration_.buttons[button]; }
+  const Triggers::Button& mapping(uint8_t button) const { return configuration_->buttons[button]; }
   bool buttonValid(uint8_t button) const { return validButtons_[button]; }
   const SlotReport& report(uint8_t button, uint8_t slot) const { return reports_[button][slot]; }
   Triggers::Destinations destinations(uint8_t button, uint8_t slot) const { return validated_[button][slot].destinations; }
@@ -58,7 +59,7 @@ class Commands {
   void collectPorts(Triggers::Destinations destinations);
   void press(uint8_t button, const Network& network, bool onlineAtEvent, bool usbAtEvent, uint32_t now);
   Result execute(uint8_t button, uint8_t slot, const Network& network, bool onlineAtEvent, bool usbAtEvent, uint32_t now);
-  const Triggers::Configuration& configuration_;
+  const Triggers::Configuration* configuration_;
   Midi::Engine& midi_;
   bool validButtons_[4] = {};
   Validation validated_[4][4];

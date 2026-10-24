@@ -7,7 +7,7 @@
 #include "commands.h"
 #include "app_connection.h"
 
-constexpr char firmwareVersion[] = "M4B / 0.4.1";
+constexpr char firmwareVersion[] = "M5 / 0.5.0";
 
 class Display {
  public:

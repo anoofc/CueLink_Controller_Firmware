@@ -15,12 +15,12 @@ void Commands::collectPorts(Triggers::Destinations list) {
     }
   }
 }
-void Commands::begin() {
+void Commands::begin(bool resetMidi) {
   excludedCount_ = 0;
-  collectPorts(configuration_.master);
-  midi_.begin();
+  collectPorts(configuration_->master);
+  if (resetMidi) midi_.begin();
   for (uint8_t button = 0; button < 4; ++button) {
-    const auto& mapping = configuration_.buttons[button];
+    const auto& mapping = configuration_->buttons[button];
     validButtons_[button] = Triggers::validLabel(mapping.label) && mapping.count <= 4 && (!mapping.count || mapping.triggers);
     for (uint8_t slot = 0; slot < 4; ++slot) {
       reports_[button][slot] = SlotReport{};
@@ -37,7 +37,7 @@ void Commands::begin() {
       } else if (Triggers::encode(trigger, packet_) != Command::EncodeStatus::Ok) {
         validated.result = Result::InvalidCommand;
       } else {
-        const auto effective = configuration_.useMaster ? configuration_.master : individual;
+        const auto effective = configuration_->useMaster ? configuration_->master : individual;
         // Bound all stored lists, even when master routing overrides their IPs.
         if (!validShape(individual) || !validShape(effective)) validated.result = Result::InvalidConfiguration;
         else if (!effective.count) validated.result = Result::InvalidDestination;
@@ -81,7 +81,8 @@ void Commands::press(uint8_t button, const Network& network, bool onlineAtEvent,
     FirmwareSerial.printf("[TRIGGER] B%u invalid button configuration; no slots activated\n", button + 1);
     return;
   }
-  const auto& mapping = configuration_.buttons[button];
+  const auto& mapping = configuration_->buttons[button];
+  if (!mapping.enabled) return;
   for (uint8_t slot = 0; slot < mapping.count; ++slot) {
     if (!mapping.triggers[slot].enabled()) continue;
     ++summary_.attempted;

@@ -12,6 +12,7 @@ struct Udp { const uint8_t* bytes; size_t length; Destinations destinations; };
 // interpreted as MIDI data through this API. Settings must outlive the engine.
 class Trigger {
  public:
+  constexpr Trigger() : protocol_(Command::Protocol::RawUdp), enabled_(false), settings_(static_cast<const Udp*>(nullptr)) {}
   static constexpr Trigger osc(const Osc* settings, bool enabled = true) { return Trigger(settings, enabled); }
   static constexpr Trigger udp(const Udp* settings, bool enabled = true) { return Trigger(settings, enabled); }
   static constexpr Trigger midi(const Midi::Message* settings, bool enabled = true) { return Trigger(settings, enabled); }
@@ -34,7 +35,10 @@ class Trigger {
   bool enabled_;
   Settings settings_;
 };
-struct Button { const char* label; const Trigger* triggers; size_t count; };
+struct Button { const char* label; const Trigger* triggers; size_t count; bool enabled;
+  constexpr Button(const char* text = "", const Trigger* slots = nullptr, size_t size = 0, bool active = true)
+    : label(text), triggers(slots), count(size), enabled(active) {}
+};
 struct Configuration {
   const Button* buttons;
   bool useMaster;

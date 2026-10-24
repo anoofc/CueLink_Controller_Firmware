@@ -1,8 +1,10 @@
-# CueLink BLE protocol — version 1 (compatible through Milestone 4B)
+# CueLink BLE protocol — version 1 (compatible through Milestone 5)
 
-CueLink is a general-purpose OSC/raw UDP/USB MIDI controller. BLE in this milestone only
-exposes non-secret identity and status. It cannot configure Wi-Fi, read command
-payloads, write configuration, trigger cues, or bond/persist a pairing.
+CueLink is a general-purpose OSC/raw UDP/USB MIDI controller. The two public
+read-only version-1 status formats below remain compatible. Milestone 5 adds
+separate authenticated configuration characteristics and physical authorization;
+see [the configuration protocol](configuration_protocol.md). They never return
+Wi-Fi passwords or offer remote cue triggering.
 
 ## Service and characteristics
 
@@ -18,7 +20,8 @@ so both fit within their separate 31-byte limits. Default ATT MTU 23 gives a
 20-byte characteristic payload, sufficient for both values. Neither endpoint
 requests an MTU change or chunks values. Standard GAP/GATT services and the
 notification CCCD exist as required by BLE; the CCCD only enables notifications.
-No custom characteristic has WRITE permission.
+The two legacy characteristics have no WRITE permission. M5 protected request/response
+characteristics use the separate configuration transport.
 
 ### Device information
 
@@ -27,12 +30,13 @@ No custom characteristic has WRITE permission.
 | 0 | 1 | Protocol version, unsigned byte: `1` |
 | 1–6 | 6 | Stable identity: factory-derived station MAC, in canonical displayed byte order |
 | 7 | 1 | Firmware major, unsigned byte (`0`) |
-| 8 | 1 | Firmware minor, unsigned byte (`4`) |
-| 9 | 1 | Firmware patch, unsigned byte (`1`); together displayed as `0.4.1` |
+| 8 | 1 | Firmware minor, unsigned byte (`5`) |
+| 9 | 1 | Firmware patch, unsigned byte (`0`); together displayed as `0.5.0` |
 | 10–11 | 2 | Capability bitmask, unsigned **little-endian** uint16 |
 
 Capability bits: bit 0 Wi-Fi station, bit 1 OSC-over-UDP, bit 2 raw UDP, bit 3
-read-only BLE live status, bit 4 USB MIDI. Current value `0x001f`. Remaining bits are reserved;
+read-only BLE live status, bit 4 USB MIDI, bit 5 authenticated configuration, bit 6
+network staging/scanning. Current value `0x007f`. Remaining bits are reserved;
 a version-1 reader may preserve/ignore unknown capability bits. These flags
 indicate firmware features, not services available for invocation over BLE.
 
@@ -88,8 +92,8 @@ C++ encoder and Dart decoder tests.
   no sample backlog or retry queue exists. READ returns the latest sample.
 - Advertising failure is shown as Off/retry; another B3 request retries. Normal
   diagnostic navigation and B4 exit remain available in every BLE state.
-- No bonding/encryption is requested. This is deliberately read-only, non-secret
-  status during physical opt-in discovery; it is not an authentication scheme.
+- Public status remains non-secret/read-only. M5 configuration requires authenticated
+  SC bonding/encryption plus physical session authorization; see the configuration protocol.
 
 ## iOS app
 

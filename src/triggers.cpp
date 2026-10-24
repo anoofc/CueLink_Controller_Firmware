@@ -19,10 +19,10 @@ Triggers::Destinations Triggers::individualDestinations(const Trigger& trigger) 
 }
 bool Triggers::validLabel(const char* label) {
   if (!label || !label[0]) return false;
-  for (size_t i = 0; i <= 4; ++i) {
+  for (size_t i = 0; i <= 12; ++i) {
     const uint8_t ch = uint8_t(label[i]);
     if (!ch) return true;
-    if (i == 4 || ch < 32 || ch > 126) return false;
+    if (i == 12 || ch < 32 || ch > 126) return false;
   }
   return false;
 }
