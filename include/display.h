@@ -7,7 +7,7 @@
 #include "commands.h"
 #include "app_connection.h"
 
-constexpr char firmwareVersion[] = "M4A / 0.4.0";
+constexpr char firmwareVersion[] = "M4B / 0.4.1";
 
 class Display {
  public:
@@ -15,13 +15,15 @@ class Display {
   void update(const ButtonController& buttons, const Network& network,
               const Commands& commands, const AppConnection& app, uint32_t now);
   void logStatus() const;
+  void advanceTriggerDetail() { triggerDetail_ = (triggerDetail_ + 1) % 32; }
 
  private:
   void draw(const ButtonController& buttons, const Network& network,
             const Commands& commands, const AppConnection& app, uint32_t now);
-  void drawIndicators(const ButtonController& buttons, uint8_t y);
+  void drawIndicators(const ButtonController& buttons, const Commands& commands, uint8_t y);
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled_{U8G2_R0, U8X8_PIN_NONE,
                                           Pins::scl, Pins::sda};
+  uint8_t triggerDetail_ = 0;
   bool available_ = false;
   uint8_t address_ = 0;
   bool sending_ = false;

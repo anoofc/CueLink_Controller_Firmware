@@ -8,6 +8,7 @@ const char* protocolText(Protocol protocol) {
   switch (protocol) {
     case Protocol::Osc: return "OSC";
     case Protocol::RawUdp: return "UDP";
+    case Protocol::UsbMidi: return "MIDI";
   }
   return "Invalid";
 }

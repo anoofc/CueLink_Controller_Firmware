@@ -21,15 +21,16 @@ int main() {
   timeval timeout{1, 0};
   assert(setsockopt(receiver, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout)) == 0);
   const uint16_t destinationPort = ntohs(local.sin_port);
-  Command::ButtonMapping mappings[4];
+  TestCommands::Mapping mappings[4];
   memcpy(mappings, TestCommands::buttons, sizeof(mappings));
   mappings[0].destination.port = destinationPort;
 
+  const uint16_t ports[] = {destinationPort, 7000, 9000};
   UdpTransport transport;
-  assert(transport.open(mappings, 4));
+  assert(transport.open(ports, 3));
   const uint16_t source = transport.localPort();
   for (const auto& mapping : mappings) assert(source != mapping.destination.port);
-  assert(source != 0 && transport.open(mappings, 4) && transport.localPort() == source);
+  assert(source != 0 && transport.open(ports, 3) && transport.localPort() == source);
   Command::IPv4 address;
   address.octets[0] = 127;
   address.octets[3] = 1;  // Native host transport test only; not user configuration.
@@ -48,7 +49,7 @@ int main() {
   }
   transport.stop();
   assert(!transport.active() && transport.localPort() == 0);
-  assert(transport.open(mappings, 4));
+  assert(transport.open(ports, 3));
   transport.stop();
   close(receiver);
   puts("Native UDP datagram bytes, reusable source port, and socket lifecycle passed.");

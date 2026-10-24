@@ -74,6 +74,7 @@ ButtonController::Events ButtonController::update(uint32_t now) {
     }
   } else {
     if (page_ == appConnectionPage && (pressEdges & 0x04)) events.appConnectionRequested = true;
+    if (page_ == triggerDetailsPage && (pressEdges & 0x04)) events.triggerDetailRequested = true;
     if (pressEdges & 0x01) page_ = (page_ + pageCount - 1) % pageCount;
     if (pressEdges & 0x02) page_ = (page_ + 1) % pageCount;
   }

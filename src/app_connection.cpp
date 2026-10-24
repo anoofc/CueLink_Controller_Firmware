@@ -1,3 +1,4 @@
+#include "serial_log.h"
 #include "app_connection.h"
 #include <esp_mac.h>
 
@@ -26,12 +27,12 @@ void AppConnection::StatusEvents::onSubscribe(NimBLECharacteristic*, NimBLEConnI
 void AppConnection::begin(const Network& network, Mode mode, uint32_t now) {
   uint8_t identity[6];
   if (esp_read_mac(identity, ESP_MAC_WIFI_STA) != ESP_OK) {
-    Serial.println("[BLE] Device identity unavailable; BLE disabled.");
+    FirmwareSerial.println("[BLE] Device identity unavailable; BLE disabled.");
     return;
   }
   snprintf(name_, sizeof(name_), "CueLink-%02X%02X", identity[4], identity[5]);
   if (!NimBLEDevice::init(name_)) {
-    Serial.println("[BLE] Initialization failed; BLE disabled.");
+    FirmwareSerial.println("[BLE] Initialization failed; BLE disabled.");
     return;
   }
   NimBLEDevice::setSecurityAuth(false, false, false);  // No bonding or pairing store.
@@ -61,7 +62,7 @@ void AppConnection::begin(const Network& network, Mode mode, uint32_t now) {
   advertising_->setScanResponseData(response);
   advertising_->enableScanResponse(true);
   available_ = true;
-  Serial.printf("[BLE] %s initialized; discovery off.\n", name_);
+  FirmwareSerial.printf("[BLE] %s initialized; discovery off.\n", name_);
 }
 
 void AppConnection::refresh(const Network& network, Mode mode) {
@@ -87,7 +88,7 @@ void AppConnection::update(const Network& network, Mode mode, bool discoveryRequ
   if (discoveryRequested) {
     window_.enable(now);
     advertisingFailed_ = false;
-    Serial.println("[BLE] App discovery enabled for 120 seconds.");
+    FirmwareSerial.println("[BLE] App discovery enabled for 120 seconds.");
   }
   portENTER_CRITICAL(&eventMux_);
   const bool connected = callbackConnected_;
@@ -98,20 +99,20 @@ void AppConnection::update(const Network& network, Mode mode, bool discoveryRequ
   portEXIT_CRITICAL(&eventMux_);
   if (connected != connected_) {
     connected_ = connected;
-    Serial.printf("[BLE] App %s.\n", connected ? "connected" : "disconnected");
+    FirmwareSerial.printf("[BLE] App %s.\n", connected ? "connected" : "disconnected");
     refresh(network, mode);
   }
-  if (disconnects) Serial.printf("[BLE] Disconnect reason=%d; events=%lu\n", reason,
+  if (disconnects) FirmwareSerial.printf("[BLE] Disconnect reason=%d; events=%lu\n", reason,
                                   static_cast<unsigned long>(disconnects));
   const bool shouldAdvertise = window_.active() && !connected_ && !advertisingFailed_;
   if (shouldAdvertise && !advertising_->isAdvertising()) {
     if (!advertising_->start()) {
       advertisingFailed_ = true;
-      Serial.println("[BLE] Advertising failed; press B3 on App connection to retry.");
+      FirmwareSerial.println("[BLE] Advertising failed; press B3 on App connection to retry.");
     }
   } else if (!shouldAdvertise && advertising_->isAdvertising()) {
     advertising_->stop();
-    Serial.println("[BLE] Discovery stopped.");
+    FirmwareSerial.println("[BLE] Discovery stopped.");
   }
   if (uint32_t(now - sampledAt_) >= 1000) {
     sampledAt_ = now;

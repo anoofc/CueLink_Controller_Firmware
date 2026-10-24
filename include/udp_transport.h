@@ -10,7 +10,7 @@ class UdpTransport {
   UdpTransport() = default;
   UdpTransport(const UdpTransport&) = delete;
   UdpTransport& operator=(const UdpTransport&) = delete;
-  bool open(const Command::ButtonMapping* mappings, size_t count);
+  bool open(const uint16_t* excludedPorts, size_t count);
   bool send(const Command::IPv4& address, uint16_t port, const Command::Packet& packet);
   void stop();
   bool active() const { return socket_ >= 0; }

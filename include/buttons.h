@@ -10,12 +10,15 @@ class ButtonController {
   static constexpr uint32_t debounceMs = 30;
   static constexpr uint32_t holdMs = 5000;
   static constexpr uint8_t appConnectionPage = 12;
-  static constexpr uint8_t pageCount = 13;
+  static constexpr uint8_t usbMidiPage = 13;
+  static constexpr uint8_t triggerDetailsPage = 14;
+  static constexpr uint8_t pageCount = 15;
 
   struct Events {
     uint8_t shortPressMask = 0;
     bool modeChanged = false;
     bool appConnectionRequested = false;
+    bool triggerDetailRequested = false;
   };
 
   void begin(uint32_t now);

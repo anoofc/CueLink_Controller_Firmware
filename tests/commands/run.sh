@@ -10,6 +10,6 @@ c++ -std=c++11 -Wall -Wextra -Werror -Iinclude \
   src/command.cpp src/udp_transport.cpp tests/commands/transport_test.cpp -o "$scratch/transport"
 "$scratch/transport"
 c++ -std=c++11 -Wall -Wextra -Werror -Itests/commands -Itests/network -Iinclude \
-  src/buttons.cpp src/command.cpp src/commands.cpp tests/commands/runtime_test.cpp -o "$scratch/runtime"
+  src/buttons.cpp src/command.cpp src/triggers.cpp src/midi.cpp src/commands.cpp tests/commands/runtime_test.cpp -o "$scratch/runtime"
 "$scratch/runtime"
 python3 tests/commands/receiver_test.py

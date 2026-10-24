@@ -6,9 +6,9 @@ constexpr char serviceUuid[] = "c0e10001-7a6b-4c8d-9e10-5b2f034a0001";
 constexpr char informationUuid[] = "c0e10002-7a6b-4c8d-9e10-5b2f034a0001";
 constexpr char statusUuid[] = "c0e10003-7a6b-4c8d-9e10-5b2f034a0001";
 constexpr uint8_t protocolVersion = 1;
-constexpr uint8_t firmwareMajor = 0, firmwareMinor = 4, firmwarePatch = 0;
+constexpr uint8_t firmwareMajor = 0, firmwareMinor = 4, firmwarePatch = 1;
 constexpr uint8_t payloadSize = 12;
-constexpr uint16_t capabilities = 0x000f;
+constexpr uint16_t capabilities = 0x001f;  // Bit 4: USB MIDI; existing version-1 extension bits.
 
 inline void encodeInformation(const uint8_t (&identity)[6], uint8_t (&out)[payloadSize]) {
   out[0] = protocolVersion;

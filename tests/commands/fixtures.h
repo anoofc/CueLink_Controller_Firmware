@@ -7,7 +7,8 @@ namespace TestCommands {
 constexpr Command::Argument connect[] = {Command::Argument::int32(1)};
 constexpr uint8_t raw3[] = "CUELINK_B3";
 constexpr uint8_t raw4[] = "CUELINK_B4";
-constexpr Command::ButtonMapping buttons[] = {
+struct Mapping { Command::Destination destination; Command::Action action; };
+constexpr Mapping buttons[] = {
     {{"192.0.2.42", 7000}, {Command::Protocol::Osc,
       "/composition/columns/1/connect", connect, 1, nullptr, 0}},
     {{"192.0.2.42", 7000}, {Command::Protocol::Osc,

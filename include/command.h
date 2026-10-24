@@ -5,7 +5,7 @@
 
 namespace Command {
 constexpr size_t maxPacketSize = 1024;
-enum class Protocol { Osc, RawUdp };
+enum class Protocol { Osc, RawUdp, UsbMidi };
 enum class ArgumentType { Int32, Float32, String };
 
 struct Argument {
@@ -36,13 +36,6 @@ struct Action {
   size_t argumentCount;
   const uint8_t* rawBytes;
   size_t rawLength;
-};
-
-// One action/destination today. Keep them separate so a future configuration
-// model can associate actions and destinations without changing the encoder.
-struct ButtonMapping {
-  Destination destination;
-  Action action;
 };
 
 struct IPv4 { uint8_t octets[4] = {}; };

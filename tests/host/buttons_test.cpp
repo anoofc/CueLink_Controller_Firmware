@@ -149,8 +149,10 @@ int main() {
     f.arm();
     f.enterDiagnostics();
     f.edge(3, false);
-    f.edge(0, true);  // Wrap directly to the new last page.
-    f.edge(0, false);
+    for (uint8_t i = 0; i < ButtonController::pageCount - ButtonController::appConnectionPage; ++i) {
+      f.edge(0, true);
+      f.edge(0, false);
+    }
     assert(f.buttons.page() == ButtonController::appConnectionPage);
     const auto request = f.edge(2, true);
     assert(request.appConnectionRequested && request.shortPressMask == 0);

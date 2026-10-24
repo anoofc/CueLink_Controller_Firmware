@@ -1,3 +1,4 @@
+#include "serial_log.h"
 #include "network.h"
 
 #include <WiFi.h>
@@ -27,13 +28,13 @@ const char* Network::stateText() const {
 void Network::setState(State state) {
   if (state_ == state) return;
   state_ = state;
-  Serial.printf("[Wi-Fi] %s\n", stateText());
+  FirmwareSerial.printf("[Wi-Fi] %s\n", stateText());
 }
 
 void Network::begin(uint32_t now) {
   configured_ = CUELINK_WIFI_SSID[0] != '\0';
   if (!configured_) {
-    Serial.println("[Wi-Fi] Wi-Fi not configured");
+    FirmwareSerial.println("[Wi-Fi] Wi-Fi not configured");
     return;  // Do not initialize the radio or use any previously stored AP.
   }
   WiFi.persistent(false);  // Set RAM storage before enabling the radio.
@@ -58,13 +59,13 @@ void Network::begin(uint32_t now) {
 void Network::startAttempt(uint32_t now) {
   attempting_ = true;
   attemptAt_ = now;
-  Serial.println("[Wi-Fi] Starting station/DHCP attempt (15s maximum)");
+  FirmwareSerial.println("[Wi-Fi] Starting station/DHCP attempt (15s maximum)");
   if (!initialized_) {
     // A new firmware boot uses DHCP by default; no static config is installed.
     initialized_ = WiFi.mode(WIFI_STA);
   }
   if (!initialized_ || WiFi.begin(CUELINK_WIFI_SSID, CUELINK_WIFI_PASSWORD) == WL_CONNECT_FAILED) {
-    Serial.println("[Wi-Fi] Could not start connection");
+    FirmwareSerial.println("[Wi-Fi] Could not start connection");
     retryLater(now);
   }
 }
@@ -85,7 +86,7 @@ void Network::retryLater(uint32_t now) {
   retryAt_ = now;
   retryDelay_ = nextBackoff_;
   nextBackoff_ = nextBackoff_ >= 16000 ? 30000 : nextBackoff_ * 2;
-  Serial.printf("[Wi-Fi] Retry in %lu ms\n", static_cast<unsigned long>(retryDelay_));
+  FirmwareSerial.printf("[Wi-Fi] Retry in %lu ms\n", static_cast<unsigned long>(retryDelay_));
 }
 
 void Network::refresh() {
@@ -107,11 +108,11 @@ void Network::update(uint32_t now) {
   lostIp_ = false;
   portEXIT_CRITICAL(&eventMux_);
   if (disconnects) {
-    Serial.printf("[Wi-Fi] Disconnect reason=%u (%s); events=%lu\n", reason,
+    FirmwareSerial.printf("[Wi-Fi] Disconnect reason=%u (%s); events=%lu\n", reason,
                   WiFi.disconnectReasonName(static_cast<wifi_err_reason_t>(reason ? reason : 1)),
                   static_cast<unsigned long>(disconnects));
   }
-  if (lostIp) Serial.println("[Wi-Fi] IPv4 lease lost");
+  if (lostIp) FirmwareSerial.println("[Wi-Fi] IPv4 lease lost");
 
   const bool ready = WiFi.status() == WL_CONNECTED && uint32_t(WiFi.localIP()) != 0;
   if (connected() && (disconnects || lostIp || !ready)) {
@@ -137,7 +138,7 @@ void Network::update(uint32_t now) {
     // Arduino-ESP32 2.x may perform one internal first-connect retry even with
     // auto reconnect disabled. It stays inside this single bounded attempt.
     if (uint32_t(now - attemptAt_) >= attemptMs) {
-      Serial.println("[Wi-Fi] Connection/DHCP attempt timed out");
+      FirmwareSerial.println("[Wi-Fi] Connection/DHCP attempt timed out");
       retryLater(now);
     }
   } else if (uint32_t(now - retryAt_) >= retryDelay_) {
@@ -147,13 +148,13 @@ void Network::update(uint32_t now) {
 
 void Network::logStatus() const {
   if (!configured_) {
-    Serial.println("[Wi-Fi] Wi-Fi not configured");
+    FirmwareSerial.println("[Wi-Fi] Wi-Fi not configured");
     return;
   }
-  Serial.printf("[Wi-Fi] %s; hostname=cuelink-controller; losses=%lu\n",
+  FirmwareSerial.printf("[Wi-Fi] %s; hostname=cuelink-controller; losses=%lu\n",
                 stateText(), static_cast<unsigned long>(losses_));
   if (!connected()) return;
-  Serial.printf("[Wi-Fi] IPv4=%s mask=%s gateway=%s DNS=%s; RSSI=%ld dBm channel=%u\n",
+  FirmwareSerial.printf("[Wi-Fi] IPv4=%s mask=%s gateway=%s DNS=%s; RSSI=%ld dBm channel=%u\n",
                 ip_.toString().c_str(), subnet_.toString().c_str(),
                 gateway_.toString().c_str(), dns_.toString().c_str(),
                 static_cast<long>(rssi_), channel_);

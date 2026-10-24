@@ -16,7 +16,7 @@ void UdpTransport::stop() {
   localPort_ = 0;
 }
 
-bool UdpTransport::open(const Command::ButtonMapping* mappings, size_t count) {
+bool UdpTransport::open(const uint16_t* excludedPorts, size_t count) {
   if (active()) return true;
   // Rare source/destination collisions are resolved before sending anything.
   // Keep even socket setup bounded; a later press may try setup again.
@@ -41,7 +41,7 @@ bool UdpTransport::open(const Command::ButtonMapping* mappings, size_t count) {
     localPort_ = ntohs(local.sin_port);
     bool distinct = localPort_ != 0;
     for (size_t i = 0; i < count; ++i) {
-      if (mappings[i].destination.port == localPort_) distinct = false;
+      if (excludedPorts[i] == localPort_) distinct = false;
     }
     if (distinct) return true;
     stop();

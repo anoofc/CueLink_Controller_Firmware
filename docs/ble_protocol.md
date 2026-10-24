@@ -1,6 +1,6 @@
-# CueLink BLE protocol — version 1 (Milestone 4A)
+# CueLink BLE protocol — version 1 (compatible through Milestone 4B)
 
-CueLink is a general-purpose OSC/raw UDP controller. BLE in this milestone only
+CueLink is a general-purpose OSC/raw UDP/USB MIDI controller. BLE in this milestone only
 exposes non-secret identity and status. It cannot configure Wi-Fi, read command
 payloads, write configuration, trigger cues, or bond/persist a pairing.
 
@@ -28,11 +28,11 @@ No custom characteristic has WRITE permission.
 | 1–6 | 6 | Stable identity: factory-derived station MAC, in canonical displayed byte order |
 | 7 | 1 | Firmware major, unsigned byte (`0`) |
 | 8 | 1 | Firmware minor, unsigned byte (`4`) |
-| 9 | 1 | Firmware patch, unsigned byte (`0`); together displayed as `0.4.0` |
+| 9 | 1 | Firmware patch, unsigned byte (`1`); together displayed as `0.4.1` |
 | 10–11 | 2 | Capability bitmask, unsigned **little-endian** uint16 |
 
 Capability bits: bit 0 Wi-Fi station, bit 1 OSC-over-UDP, bit 2 raw UDP, bit 3
-read-only BLE live status. Current value `0x000f`. Remaining bits are reserved;
+read-only BLE live status, bit 4 USB MIDI. Current value `0x001f`. Remaining bits are reserved;
 a version-1 reader may preserve/ignore unknown capability bits. These flags
 indicate firmware features, not services available for invocation over BLE.
 
@@ -117,7 +117,7 @@ No location or local-network permission is requested. No Android target is added
   [Pinned upstream manifest](https://github.com/h2zero/NimBLE-Arduino/blob/2.3.9/library.properties),
   [license](https://github.com/h2zero/NimBLE-Arduino/blob/2.3.9/LICENSE).
   Its bundled NimBLE components retain their upstream notices. The single-connection
-  build define affects BLE capacity only; board, USB, and upload settings remain.
+  build define affects BLE capacity only; board and upload defaults remain; M4B composite USB flags are documented in `triggers_and_usb_midi.md`.
 - App: **flutter_reactive_ble 5.6.0**, pinned in `pubspec.yaml`, BSD-3-Clause
   (Signify's BSD license). `reactive_ble_mobile` and platform-interface dependencies
   are locked in `pubspec.lock`. The installed Flutter 3.47.7 / Dart 3.13.5 and iOS
