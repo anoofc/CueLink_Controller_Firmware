@@ -20,13 +20,15 @@ class Display {
  private:
   void draw(const ButtonController& buttons, const Network& network,
             const Commands& commands, const AppConnection& app, uint32_t now);
-  void drawIndicators(const ButtonController& buttons, const Commands& commands, uint8_t y);
+  void drawIndicators(const ButtonController& buttons, const Commands& commands, uint8_t y, uint8_t height = 19);
   U8G2_SSD1306_128X64_NONAME_F_HW_I2C oled_{U8G2_R0, U8X8_PIN_NONE,
                                           Pins::scl, Pins::sda};
   uint8_t triggerDetail_ = 0;
   bool available_ = false;
   uint8_t address_ = 0;
   bool sending_ = false;
+  bool hasFrame_ = false;
+  uint8_t previousFrame_[1024] = {};
   uint8_t nextRow_ = 0;
   uint32_t lastFrameAt_ = 0;
   uint32_t previousTick_ = 0;

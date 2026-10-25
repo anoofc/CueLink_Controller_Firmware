@@ -1,5 +1,6 @@
 #include "serial_log.h"
 #include "display.h"
+#include "display_home.h"
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -48,65 +49,51 @@ void Display::logStatus() const {
   else FirmwareSerial.println("[OLED] Unavailable; buttons remain active.");
 }
 
-void Display::drawIndicators(const ButtonController& buttons, const Commands& commands, uint8_t y) {
-  oled_.setFont(u8g2_font_6x12_tr);
+void Display::drawIndicators(const ButtonController& buttons, const Commands& commands, uint8_t y, uint8_t height) {
   for (uint8_t i = 0; i < ButtonController::count; ++i) {
-    const uint8_t x = 4 + i * 31;
-    if (buttons.pressed(i)) oled_.drawRBox(x, y, 27, 19, 3);
-    else oled_.drawRFrame(x, y, 27, 19, 3);
-    oled_.setDrawColor(buttons.pressed(i) ? 0 : 1);
-    const char* label = commands.buttonValid(i) ? commands.mapping(i).label : "?";
-    char abbreviated[5];
-    if (strlen(label)>4) { snprintf(abbreviated,sizeof(abbreviated),"%.3s.",label); label=abbreviated; }
-    oled_.setFont(strlen(label) > 2 ? u8g2_font_5x7_tr : u8g2_font_6x12_tr);
-    oled_.drawStr(x + (27 - oled_.getStrWidth(label)) / 2, y + 13, label);
-    oled_.setDrawColor(1);
+    DisplayHome::drawIndicator(oled_.getU8g2(), i,
+        commands.buttonValid(i) ? commands.mapping(i).label : "?", buttons.pressed(i), y, height);
   }
 }
 
 void Display::draw(const ButtonController& buttons, const Network& network,
                     const Commands& commands, const AppConnection& app, uint32_t now) {
   oled_.clearBuffer();
-  oled_.setFont(u8g2_font_6x12_tr);
-  oled_.drawStr(4, 10, "CueLink");
   char text[32];
-  if (buttons.mode() == Mode::Run) {
-    oled_.drawStr(106, 10, "RUN");
-  } else {
-    oled_.setFont(u8g2_font_5x7_tr);
-    snprintf(text, sizeof(text), "DIAG %u/%u", buttons.page() + 1,
-             ButtonController::pageCount);
-    oled_.drawStr(74, 10, text);
-  }
-  oled_.setFont(u8g2_font_6x12_tr);
-  oled_.drawHLine(4, 13, 120);
-
   const uint32_t hold = buttons.holdElapsed(now);
   if (buttons.mode() == Mode::Run) {
-    drawIndicators(buttons, commands, 16);
-    oled_.setFont(u8g2_font_5x7_tr);
-    if (network.state() == Network::State::NotConfigured) {
-      snprintf(text, sizeof(text), "Wi-Fi not configured");
-    } else snprintf(text, sizeof(text), "Wi-Fi %s", network.stateText());
-    oled_.drawStr(4, 44, text);
-    snprintf(text, sizeof(text), "IP %s",
-             network.connected() ? network.ip().toString().c_str() : "--");
-    oled_.drawStr(4, 53, text);
-    // Network status and IP have dedicated lines even during event feedback.
-    // Only a currently active B4 hold gets a progress strip.
-    if (hold) oled_.drawBox(4, 55, (hold * 120U) / ButtonController::holdMs, 1);
-    if (buttons.waitingForRelease()) {
-      snprintf(text, sizeof(text), "Release all buttons");
-    } else if (hold) {
-      snprintf(text, sizeof(text), "Hold B4: diagnostics");
-    } else if (commands.feedbackActive()) {
-      commands.feedback(text, sizeof(text));
-    } else {
-      snprintf(text, sizeof(text), "Hold B4 5s: diagnostics");
+    const char* state = "Offline";
+    switch (network.state()) {
+      case Network::State::Connected: state = "Connected"; break;
+      case Network::State::Connecting: state = "Connecting..."; break;
+      case Network::State::Reconnecting: state = "Reconnecting..."; break;
+      default: break;
     }
-    oled_.drawStr(4, 62, text);
+    const bool validIp = network.connected() && uint32_t(network.ip()) != 0;
+    snprintf(text, sizeof(text), "%s", validIp ? network.ip().toString().c_str() : "No IP");
+    const char* labels[DisplayHome::buttonCount];
+    uint8_t pressed = 0;
+    for (uint8_t i = 0; i < ButtonController::count; ++i) {
+      labels[i] = commands.buttonValid(i) ? commands.mapping(i).label : "?";
+      if (buttons.pressed(i)) pressed |= 1U << i;
+    }
+    char feedback[32] = {};
+    if (buttons.waitingForRelease()) snprintf(feedback, sizeof(feedback), "Release buttons");
+    else if (commands.feedbackActive()) commands.feedback(feedback, sizeof(feedback));
+    DisplayHome::draw(oled_.getU8g2(), state, text, labels, pressed, feedback,
+                      (hold * (DisplayHome::width - 2 * DisplayHome::margin)) / ButtonController::holdMs);
     return;
   }
+
+  // Diagnostics retain their existing page layout and controls.
+  oled_.setFont(u8g2_font_6x12_tr);
+  oled_.drawStr(4, 10, "CueLink");
+  oled_.setFont(u8g2_font_5x7_tr);
+  snprintf(text, sizeof(text), "DIAG %u/%u", buttons.page() + 1,
+           ButtonController::pageCount);
+  oled_.drawStr(74, 10, text);
+  oled_.setFont(u8g2_font_6x12_tr);
+  oled_.drawHLine(4, 13, 120);
 
   if (buttons.page() == 0) {
     oled_.drawStr(4, 25, "LIVE BUTTONS");
@@ -309,6 +296,10 @@ void Display::update(const ButtonController& buttons, const Network& network,
     if (uint32_t(now - lastFrameAt_) < 40) return;  // At most 25 frames/second.
     lastFrameAt_ = now;
     draw(buttons, network, commands, app, now);
+    // Skip identical frames while preserving the bounded tile-row transfer.
+    if (memcmp(previousFrame_, oled_.getBufferPtr(), sizeof(previousFrame_)) == 0 && hasFrame_) return;
+    memcpy(previousFrame_, oled_.getBufferPtr(), sizeof(previousFrame_));
+    hasFrame_ = true;
     nextRow_ = 0;
     sending_ = true;
   }
