@@ -8,7 +8,7 @@ constexpr char statusUuid[] = "c0e10003-7a6b-4c8d-9e10-5b2f034a0001";
 constexpr uint8_t protocolVersion = 1;
 constexpr uint8_t firmwareMajor = 0, firmwareMinor = 5, firmwarePatch = 0;
 constexpr uint8_t payloadSize = 12;
-constexpr uint16_t capabilities = 0x007f;  // Bits 5/6: authenticated configuration / network staging+scan.
+constexpr uint16_t capabilities = 0x00ff;  // Bit 7: MTU-aware v2 notifications + scoped readback. Bits 5/6: authenticated configuration / network staging+scan.
 
 inline void encodeInformation(const uint8_t (&identity)[6], uint8_t (&out)[payloadSize]) {
   out[0] = protocolVersion;

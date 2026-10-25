@@ -184,6 +184,56 @@ int main() {
     deliver(frame(1, 7, 0, tooLarge));
     assert(uint8_t(t.frame()[1]) == 0x83);
   }
+  // V2 uses the agreed ATT value budget, including MTU 23, without changing persisted JSON.
+  for (size_t budget : {size_t(20), size_t(182), size_t(244)}) {
+    Config::Transfer transfer;
+    Port port; Midi::Engine midi(port); midi.begin();
+    assert(midi.submit(Midi::Message::pulse(1, 60, 100, 10), true, 0) == Midi::Result::Submitted);
+    Network network; uint32_t tick = 0;
+    const std::string data(Config::maxTransfer, 'x');
+    std::string begin;
+    put(begin, data.size()); put(begin, Config::crc32(reinterpret_cast<const uint8_t*>(data.data()), data.size()));
+    begin += char(244); begin += char(0);
+    auto deliver = [&](uint8_t kind, uint16_t seq, const std::string& body = std::string()) {
+      std::string packet = frame(kind, 77, seq, body); packet[0] = 2;
+      ++tick; network.update(tick); midi.update(tick);
+      transfer.accept(reinterpret_cast<const uint8_t*>(packet.data()), packet.size(), true, tick, budget);
+    };
+    deliver(1, 0, begin);
+    assert(transfer.frame().size() == 10 && uint8_t(transfer.frame()[8]) == budget);
+    const size_t payload = budget - 8;
+    uint16_t seq = 0;
+    for (size_t offset = 0; offset < data.size(); offset += payload) deliver(2, seq++, data.substr(offset, payload));
+    deliver(3, seq);
+    assert(transfer.complete() && transfer.request() == data);
+    transfer.reply(data);
+    std::string readback;
+    for (uint16_t chunk = 0; readback.size() < data.size(); ++chunk) {
+      deliver(5, chunk);
+      assert(transfer.frame().size() <= budget && uint8_t(transfer.frame()[0]) == 2);
+      const std::string first = transfer.frame();
+      deliver(5, chunk); assert(first == transfer.frame()); // Safe idempotent recovery fetch.
+      readback += first.substr(8);
+    }
+    assert(readback == data);
+    assert(network.connected() && midi.pendingCount() == 0 && port.packets.size() == 2);
+    assert(port.packets.back().bytes[1] == 0x80);
+    deliver(4, 0);
+    deliver(1, 0, begin);
+    deliver(2, 1, "bad sequence");
+    assert(uint8_t(transfer.frame()[1]) == 0x83 && !transfer.complete());
+    deliver(1, 0, begin);
+    seq = 0;
+    std::string corrupt = data; corrupt[0] ^= 1;
+    for (size_t offset = 0; offset < data.size(); offset += payload) deliver(2, seq++, corrupt.substr(offset, payload));
+    deliver(3, seq);
+    assert(!transfer.complete() && uint8_t(transfer.frame()[1]) == 0x83);
+    deliver(1, 0, begin); deliver(2, 0, data.substr(0, payload));
+    std::string fresh = frame(1, 88, 0, begin); fresh[0] = 2;
+    transfer.accept(reinterpret_cast<const uint8_t*>(fresh.data()), fresh.size(), true, ++tick, budget);
+    assert(transfer.id() == 88 && uint8_t(transfer.frame()[1]) == 0x80 && !transfer.complete());
+    transfer.reset(); assert(transfer.request().empty() && !transfer.complete());
+  }
   {
     Store store;
     Port port;
@@ -265,6 +315,17 @@ int main() {
     manager.update(1);
     assert(manager.record().revision == 5 && manager.record().password.empty());
     assert(cues == 0 && port.packets.size() == 2);
+    {
+      const unsigned before = store.writes;
+      const std::string scoped = manager.execute(100, 0,
+        "{\"schema\":1,\"op\":\"read_scope\",\"scope\":\"button\",\"button\":0}", 0);
+      DynamicJsonDocument scope(8192); deserializeJson(scope, scoped);
+      assert(scope["ok"] == true && scope["revision"] == 5 && scope["scope"] == "button");
+      assert(scope["value"]["label"] == "Edited" && !scope.containsKey("configuration"));
+      const auto networkScope = manager.execute(101, 0,
+        "{\"schema\":1,\"op\":\"read_scope\",\"scope\":\"network\"}", 0);
+      assert(networkScope.find("test key") == std::string::npos && store.writes == before);
+    }
     request["revision"] = 5;
     request["value"]["ssid"] = "Persist failure test";
     request["credential"]["mode"] = "keep";

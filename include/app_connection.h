@@ -49,6 +49,7 @@ class AppConnection {
     explicit ConfigEvents(AppConnection& owner) : owner_(owner) {}
     void onWrite(NimBLECharacteristic*, NimBLEConnInfo&) override;
     void onRead(NimBLECharacteristic*, NimBLEConnInfo&) override;
+    void onSubscribe(NimBLECharacteristic*, NimBLEConnInfo&, uint16_t) override;
 
    private:
     AppConnection& owner_;
@@ -60,7 +61,11 @@ class AppConnection {
   NimBLECharacteristic* configResponse_ = nullptr;
   std::atomic<bool> physical_{false}, authenticated_{false};
   std::atomic<uint32_t> passkey_{0};
-  uint8_t mailbox_[128] = {}, responseFrame_[20] = {};
+  uint8_t mailbox_[Config::maxFrame] = {}, responseFrame_[Config::maxFrame] = {};
+  size_t mailboxFrameLimit_ = 20;
+  bool configSubscribed_ = false;
+  uint16_t configHandle_ = BLE_HS_CONN_HANDLE_NONE;
+  uint32_t configWrites_ = 0, configReads_ = 0, configNotifications_ = 0;
   size_t mailboxSize_ = 0, responseSize_ = 0;
   bool mailboxRejected_ = false;
   uint32_t callbackGeneration_ = 0, processedGeneration_ = 0;

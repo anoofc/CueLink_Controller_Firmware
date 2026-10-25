@@ -10,7 +10,7 @@ static void put32(std::string& s, uint32_t n) {
 }
 void Transfer::status(uint8_t kind, uint16_t sequence) {
   frame_.clear();
-  frame_ += char(1);
+  frame_ += char(version_);
   frame_ += char(kind);
   put32(frame_, id_);
   frame_ += char(sequence);
@@ -39,14 +39,14 @@ void Transfer::reply(const std::string& value) {
   put32(frame_, output_.size());
   put32(frame_, crc32(reinterpret_cast<const uint8_t*>(output_.data()), output_.size()));
 }
-void Transfer::accept(const uint8_t* data, size_t size, bool authorized, uint32_t now) {
+void Transfer::accept(const uint8_t* data, size_t size, bool authorized, uint32_t now, size_t frameLimit) {
   if (!authorized) {
     reset();
     status(0x84);
     return;
   }
   update(now);
-  if (size < 8 || size > 128 || data[0] != 1) {
+  if (size < 8 || size > maxFrame || (data[0] != 1 && data[0] != 2) || (data[0] == 1 && size > 128)) {
     reset();
     return;
   }
@@ -54,9 +54,19 @@ void Transfer::accept(const uint8_t* data, size_t size, bool authorized, uint32_
   uint16_t seq = uint16_t(data[6]) | (uint16_t(data[7]) << 8);
   uint8_t kind = data[1];
   if (kind == 1) {
-    if (receiving_ || complete_ || size != 16 || !id || seq) {
+    // A fresh request may abandon an incomplete upload (e.g. explicit full
+    // refresh after uncertainty). No mutation has executed before COMMIT.
+    if (receiving_ && id != id_) reset();
+    if (receiving_ || complete_ || size != (data[0] == 2 ? 18U : 16U) || !id || seq) {
       reset();
       return;
+    }
+    version_ = data[0];
+    payload_ = 12;
+    if (version_ == 2) {
+      const size_t requested = uint16_t(data[16]) | (uint16_t(data[17]) << 8);
+      if (requested < 20 || frameLimit < 20) { reset(); return; }
+      payload_ = std::min(std::min(requested, frameLimit), maxFrame) - 8;
     }
     id_ = id;
     total_ = read32(data + 8);
@@ -72,9 +82,10 @@ void Transfer::accept(const uint8_t* data, size_t size, bool authorized, uint32_
     receiving_ = true;
     at_ = now;
     status(0x80, 0);
+    if (version_ == 2) { frame_ += char(payload_ + 8); frame_ += char((payload_ + 8) >> 8); }
     return;
   }
-  if (id != id_) {
+  if (id != id_ || data[0] != version_ || (version_ == 2 && size > payload_ + 8)) {
     reset();
     return;
   }
@@ -85,13 +96,13 @@ void Transfer::accept(const uint8_t* data, size_t size, bool authorized, uint32_
     return;
   }
   if (kind == 5) {
-    if (output_.empty() || size != 8 || size_t(seq) * 12 >= output_.size()) {
+    if (output_.empty() || size != 8 || size_t(seq) * payload_ >= output_.size()) {
       reset();
       return;
     }
     at_ = now;
     status(0x82, seq);
-    frame_ += output_.substr(size_t(seq) * 12, 12);
+    frame_ += output_.substr(size_t(seq) * payload_, payload_);
     return;
   }
   if (!receiving_ || seq != next_) {

@@ -126,9 +126,15 @@ Same service: `c0e10001-7a6b-4c8d-9e10-5b2f034a0001`.
 | Characteristic | UUID | Properties |
 | --- | --- | --- |
 | Request | `c0e10004-7a6b-4c8d-9e10-5b2f034a0001` | WRITE with response, encryption + authentication required |
-| Response | `c0e10005-7a6b-4c8d-9e10-5b2f034a0001` | READ, encryption + authentication required |
+| Response | `c0e10005-7a6b-4c8d-9e10-5b2f034a0001` | READ + NOTIFY, encryption + authentication required |
 
-Every frame starts with: byte 0 transport version `1`; byte 1 kind; bytes 2–5
+The following table describes the **legacy v1 path**. Capability bit 7 enables
+MTU-bounded v2 frames/notifications and scoped verification, documented in
+[configuration performance](configuration_performance.md). V2 uses up to 244-byte
+frames and a 244-byte mailbox; legacy response chunks remain 12 bytes. Both paths
+retain this schema, revision, CRC and journal behavior.
+
+Every legacy frame starts with: byte 0 transport version `1`; byte 1 kind; bytes 2–5
 nonzero request/transaction ID (uint32 LE); bytes 6–7 sequence (uint16 LE).
 The ATT value length defines the frame-body length. No application read exceeds
 20 bytes. The app intentionally writes at most 20 bytes, compatible with ATT
@@ -158,7 +164,7 @@ matching ID/kind/sequence without retransmitting cues or commit operations.
 Receivers reject duplicate/out-of-order DATA, overflow and unsupported frames.
 FETCH is explicitly indexed so response slices may be read again safely.
 
-One bounded 128-byte callback mailbox is allowed. A second outstanding write
+One bounded 244-byte callback mailbox is allowed (v1 uploads remain capped at 128 bytes). A second outstanding write
 rejects the transfer rather than queueing it. BLE callbacks only check security,
 copy/clear bounded frames or return a bounded cached response; they do not parse
 configuration, save flash, scan Wi-Fi or render. Main loop owns all those actions.
@@ -175,6 +181,7 @@ Every JSON request includes `schema: 1` and `op`. Supported operations:
 | Operation | Additional fields | Scope |
 | --- | --- | --- |
 | `read` | none | Current authoritative configuration, revision and receipt, never password |
+| `read_scope` (capability bit 7) | `scope`, optional `button` | Authoritative redacted value plus revision for button/routing/network verification |
 | `query` | none | Latest staged network/scan result or current receipt and pending state |
 | `button` | `revision`, `button` (0–3), `value` (one complete button) | Only that button |
 | `routing` | `revision`, `value` (routing object) | Only routing |

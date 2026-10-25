@@ -9,9 +9,11 @@ button/routing editors, controller Wi-Fi scans and staged DHCP/static network
 changes, backed by transactional persistent configuration. No remote cue trigger
 or internet-reachability check is implemented.
 
+See **[MTU-aware configuration transfer, timings, rebuild/install and acceptance steps](docs/configuration_performance.md)** for the v2 fast path and its legacy fallback. The ≤5-second target remains awaiting physical-device verification.
+
 See **[Milestone 5 schema, authentication, storage and physical acceptance steps](docs/configuration_protocol.md)**.
 On App connection press B3 to authorize, connect the app, open **Buttons, routing
-& network**, then **Load / query device**. Enter the OLED passkey in the iOS system
+& network**, then **Load settings / Refresh**. Enter the OLED passkey in the iOS system
 pairing dialog. Configuration access requires authenticated encryption and a fresh
 physical authorization after each disconnect. Saved settings take precedence over
 source defaults; `commands.dev.h` and local secrets seed revision zero only when

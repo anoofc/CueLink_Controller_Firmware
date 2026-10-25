@@ -17,8 +17,8 @@ Wi-Fi passwords or offer remote cue triggering.
 These UUIDs are also constants in Flutter's `lib/ble/protocol.dart`. The service
 UUID is in legacy advertising data; the local name is in the scan response,
 so both fit within their separate 31-byte limits. Default ATT MTU 23 gives a
-20-byte characteristic payload, sufficient for both values. Neither endpoint
-requests an MTU change or chunks values. Standard GAP/GATT services and the
+20-byte characteristic payload, sufficient for both values. These public values do not need chunking. The protected configuration
+transport negotiates a larger MTU/value budget when available. Standard GAP/GATT services and the
 notification CCCD exist as required by BLE; the CCCD only enables notifications.
 The two legacy characteristics have no WRITE permission. M5 protected request/response
 characteristics use the separate configuration transport.
@@ -36,7 +36,8 @@ characteristics use the separate configuration transport.
 
 Capability bits: bit 0 Wi-Fi station, bit 1 OSC-over-UDP, bit 2 raw UDP, bit 3
 read-only BLE live status, bit 4 USB MIDI, bit 5 authenticated configuration, bit 6
-network staging/scanning. Current value `0x007f`. Remaining bits are reserved;
+network staging/scanning, bit 7 MTU-aware v2 configuration notifications/scoped
+verification. Current value `0x00ff`. Remaining bits are reserved;
 a version-1 reader may preserve/ignore unknown capability bits. These flags
 indicate firmware features, not services available for invocation over BLE.
 

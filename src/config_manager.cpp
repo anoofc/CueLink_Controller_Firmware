@@ -109,7 +109,16 @@ std::string ConfigManager::commit(uint32_t request, uint32_t fingerprint) {
   candidate_->document["revision"] = next.revision;
   next.configuration = Config::json(candidate_->document.as<JsonVariantConst>());
   next.password = candidatePassword_;
-  if (!journal_.save(next)) {
+#ifdef ARDUINO
+  const uint32_t persistAt = millis();
+#endif
+  const bool persisted = journal_.save(next);
+#ifdef ARDUINO
+  FirmwareSerial.printf("[ConfigTiming] request=%lu persist_ms=%lu bytes=%u ok=%u\n",
+    static_cast<unsigned long>(request), static_cast<unsigned long>(millis() - persistAt),
+    unsigned(next.configuration.size()), persisted);
+#endif
+  if (!persisted) {
     candidate_.reset();
     return response(false, "Persistence failed; previous settings retained");
   }
@@ -137,10 +146,25 @@ std::string ConfigManager::execute(uint32_t request, uint32_t fingerprint, const
   for (JsonPairConst field : input.as<JsonObjectConst>()) {
     const std::string key = field.key().c_str();
     if (key != "schema" && key != "op" && key != "revision" && key != "button" && key != "value" &&
-        key != "credential")
+        key != "credential" && key != "scope")
       return response(false, "Unsupported request field");
   }
 
+  if (op == "read_scope") {
+    const std::string scope = input["scope"] | "";
+    DynamicJsonDocument out(active_->document.memoryUsage() + 1536);
+    out["ok"] = true;
+    out["revision"] = record_.revision;
+    out["pending"] = pending_;
+    out["scope"] = scope;
+    if (scope == "button" && input["button"].is<unsigned>() && input["button"].as<unsigned>() < 4) {
+      out["button"] = input["button"];
+      out["value"].set(active_->document["buttons"][input["button"].as<unsigned>()]);
+    } else if (scope == "routing" || scope == "network") out["value"].set(active_->document[scope]);
+    else return response(false, "Invalid read scope");
+    if (out.overflowed()) return response(false, "Scoped response capacity exceeded");
+    return Config::json(out.as<JsonVariantConst>());
+  }
   if (op == "read") return response(true, "", true);
   if (op == "query") return completed_ ? reply_ : response(true);
   if (record_.request == request) {
@@ -190,7 +214,15 @@ std::string ConfigManager::execute(uint32_t request, uint32_t fingerprint, const
     return response(false, "Unknown operation or button index");
   }
   std::string error;
-  if (!candidate_->build(error)) {
+#ifdef ARDUINO
+  const uint32_t validateAt = millis();
+#endif
+  const bool valid = candidate_->build(error);
+#ifdef ARDUINO
+  FirmwareSerial.printf("[ConfigTiming] request=%lu validation_ms=%lu bytes=%u\n",
+    static_cast<unsigned long>(request), static_cast<unsigned long>(millis() - validateAt), unsigned(bytes.size()));
+#endif
+  if (!valid) {
     candidate_.reset();
     candidatePassword_.clear();
     return response(false, error.c_str());
