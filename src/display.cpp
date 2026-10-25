@@ -9,6 +9,7 @@
 #include "pins.h"
 
 void Display::begin() {
+  if (available_) return;  // Never restart the boot sequence on an initialized display.
   if (!Wire.begin(Pins::sda, Pins::scl)) {
     FirmwareSerial.println("[OLED] I2C initialization failed; continuing without display.");
     return;
@@ -41,6 +42,8 @@ void Display::begin() {
   Wire.setTimeOut(5);
   address_ = detectedAddress;
   available_ = true;
+  boot_.arm();
+  lastFrameAt_ = millis() - DisplayBoot::frameMs;  // First update can draw immediately.
   FirmwareSerial.printf("[OLED] SSD1306 initialized at 0x%02X\n", detectedAddress);
 }
 
@@ -292,10 +295,19 @@ void Display::update(const ButtonController& buttons, const Network& network,
   uptimeMs_ += uint32_t(now - previousTick_);
   previousTick_ = now;
   if (!available_) return;
+  const bool bootFinished = boot_.advance(now);
+  if (bootFinished) {
+    // Replace any partly-sent boot frame with a complete, freshly sampled live
+    // frame. Clearing its buffer and sending all eight rows removes old pixels.
+    sending_ = false;
+    hasFrame_ = false;
+  }
   if (!sending_) {
-    if (uint32_t(now - lastFrameAt_) < 40) return;  // At most 25 frames/second.
+    if (!bootFinished && uint32_t(now - lastFrameAt_) < DisplayBoot::frameMs) return;  // 25 FPS.
     lastFrameAt_ = now;
-    draw(buttons, network, commands, app, now);
+    renderingBoot_ = boot_.ownsDisplay();
+    if (renderingBoot_) DisplayBoot::draw(oled_.getU8g2(), boot_.elapsed(now));
+    else draw(buttons, network, commands, app, now);
     // Skip identical frames while preserving the bounded tile-row transfer.
     if (memcmp(previousFrame_, oled_.getBufferPtr(), sizeof(previousFrame_)) == 0 && hasFrame_) return;
     memcpy(previousFrame_, oled_.getBufferPtr(), sizeof(previousFrame_));
@@ -305,5 +317,8 @@ void Display::update(const ButtonController& buttons, const Network& network,
   }
   // One 128-byte tile row per loop: sample buttons between short I2C transfers.
   oled_.updateDisplayArea(0, nextRow_, 16, 1);
-  if (++nextRow_ == 8) sending_ = false;
+  if (++nextRow_ == 8) {
+    sending_ = false;
+    if (renderingBoot_) boot_.firstFrameDisplayed(millis());
+  }
 }

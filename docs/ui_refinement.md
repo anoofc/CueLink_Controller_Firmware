@@ -111,3 +111,5 @@ Native raster checks cover sent counts, invalid configuration, no triggers, part
 - OSC/UDP destinations, USB MIDI including scheduled Note Off, and persistence across reboot.
 - OLED readability/contrast, transitions and flicker over the actual I²C bus, physical button feedback, and B4 long-press diagnostics.
 - Native phone keyboard, safe-area/home-indicator insets and accessibility settings on the target iPhone.
+
+The subsequent five-second native OLED boot sequence and its verification are documented in [OLED boot animation](oled_boot_animation.md). The operational-screen layout described above is retained after boot.

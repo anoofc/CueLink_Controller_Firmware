@@ -6,6 +6,7 @@
 #include "network.h"
 #include "commands.h"
 #include "app_connection.h"
+#include "display_boot.h"
 
 constexpr char firmwareVersion[] = "M5 / 0.5.0";
 
@@ -26,6 +27,8 @@ class Display {
   uint8_t triggerDetail_ = 0;
   bool available_ = false;
   uint8_t address_ = 0;
+  DisplayBoot::Animation boot_;
+  bool renderingBoot_ = false;
   bool sending_ = false;
   bool hasFrame_ = false;
   uint8_t previousFrame_[1024] = {};
